@@ -307,26 +307,26 @@ td.num{text-align:right;font-variant-numeric:tabular-nums}
           </div>
           <div class="fg">
             <label>Marca</label>
-            <select id="ce-marca" onchange="onCeMarcaChange()">
-              <option value="">— Seleccionar —</option>
-            </select>
-          </div>
-          <div class="fg">
-            <label>Producto</label>
-            <select id="ce-prod" onchange="onCeProdChange()">
-              <option value="">— Primero elegí marca —</option>
+            <select id="ce-marca" onchange="filtrarProductosExistente()">
+              <option value="">— Todas —</option>
             </select>
           </div>
           <div class="fg">
             <label>Color</label>
-            <select id="ce-color" onchange="onCeColorChange()">
-              <option value="">—</option>
+            <select id="ce-color" onchange="filtrarProductosExistente()">
+              <option value="">— Todos —</option>
             </select>
           </div>
           <div class="fg">
             <label>Talle</label>
-            <select id="ce-talle" onchange="onCeTalleChange()">
-              <option value="">—</option>
+            <select id="ce-talle" onchange="filtrarProductosExistente()">
+              <option value="">— Todos —</option>
+            </select>
+          </div>
+          <div class="fg s2">
+            <label>Producto</label>
+            <select id="ce-prod" onchange="onCeProdSelectedExistente()">
+              <option value="">— Seleccionar producto —</option>
             </select>
           </div>
           <div class="fg">
@@ -651,70 +651,94 @@ function setCompraMode(mode, btn) {
   if (mode === 'existente' && gData) poblarCascading();
 }
 
+// ── Compra existente — multi-filtro libre ─────────────────────────────
+// Cualquier campo (marca, color, talle) se puede completar en cualquier orden.
+// La lista de PRODUCTO se actualiza según todos los filtros activos.
+
+function setDropdownOptions(id, values, placeholder) {
+  const sel = $(id);
+  const current = sel.value;
+  sel.innerHTML = `<option value="">${placeholder}</option>`;
+  values.forEach(v => { if (v) sel.add(new Option(v, v)); });
+  if (current && values.includes(current)) sel.value = current;
+}
+
 function poblarCascading() {
   if (!gData || !gData.catalogoStock) return;
-  const marcas = unique(gData.catalogoStock.map(r => r.marca));
-  const sel = $('ce-marca');
-  sel.innerHTML = '<option value="">— Seleccionar —</option>';
-  marcas.forEach(m => sel.add(new Option(m, m)));
-  $('ce-prod').innerHTML  = '<option value="">— Primero elegí marca —</option>';
-  $('ce-color').innerHTML = '<option value="">—</option>';
-  $('ce-talle').innerHTML = '<option value="">—</option>';
+  const cat = gData.catalogoStock;
+  setDropdownOptions('ce-marca',  unique(cat.map(r => r.marca)),  '— Todas las marcas —');
+  setDropdownOptions('ce-color',  unique(cat.map(r => r.color)),  '— Todos los colores —');
+  setDropdownOptions('ce-talle',  unique(cat.map(r => r.talle)),  '— Todos los talles —');
+  filtrarProductosExistente();
 }
 
-function onCeMarcaChange() {
+// Se llama cuando cambia marca, color o talle
+function filtrarProductosExistente() {
+  if (!gData) return;
   const marca = $('ce-marca').value;
-  const items = (gData.catalogoStock || []).filter(r => r.marca === marca);
-  const prods = unique(items.map(r => r.producto));
-  const sel = $('ce-prod');
-  sel.innerHTML = '<option value="">— Seleccionar —</option>';
-  prods.forEach(p => sel.add(new Option(p, p)));
-  $('ce-color').innerHTML = '<option value="">—</option>';
-  $('ce-talle').innerHTML = '<option value="">—</option>';
-  $('ce-cat').value = '';
-  $('ce-codigo').textContent = 'Elegí un producto';
-}
+  const color = $('ce-color').value;
+  const talle = $('ce-talle').value;
+  const cat   = gData.catalogoStock || [];
 
-function onCeProdChange() {
-  const marca = $('ce-marca').value;
-  const prod  = $('ce-prod').value;
-  const items = (gData.catalogoStock || []).filter(r => r.marca === marca && r.producto === prod);
-  const colores = unique(items.map(r => r.color));
-  const sel = $('ce-color');
-  sel.innerHTML = '<option value="">—</option>';
-  colores.forEach(c => sel.add(new Option(c, c)));
-  $('ce-talle').innerHTML = '<option value="">—</option>';
-  // Si hay un solo color, seleccionarlo automáticamente
-  if (colores.length === 1) {
-    sel.value = colores[0];
-    onCeColorChange();
-  }
-}
-
-function onCeColorChange() {
-  const marca  = $('ce-marca').value;
-  const prod   = $('ce-prod').value;
-  const color  = $('ce-color').value;
-  const items  = (gData.catalogoStock || []).filter(r => r.marca === marca && r.producto === prod && r.color === color);
-  const talles = unique(items.map(r => r.talle));
-  const sel = $('ce-talle');
-  sel.innerHTML = '<option value="">—</option>';
-  talles.forEach(t => sel.add(new Option(t, t)));
-  if (talles.length === 1) { sel.value = talles[0]; onCeTalleChange(); }
-}
-
-function onCeTalleChange() {
-  const marca  = $('ce-marca').value;
-  const prod   = $('ce-prod').value;
-  const color  = $('ce-color').value;
-  const talle  = $('ce-talle').value;
-  const item   = (gData.catalogoStock || []).find(
-    r => r.marca === marca && r.producto === prod && r.color === color && r.talle === talle
+  // Filtrar catálogo según selecciones activas
+  const filtered = cat.filter(r =>
+    (!marca || r.marca  === marca) &&
+    (!color || r.color  === color) &&
+    (!talle || r.talle  === talle)
   );
-  if (item) {
-    $('ce-cat').value      = item.categoria;
-    $('ce-codigo').textContent = item.codigo || genCodigo(marca,'',color,talle,prod);
+
+  const prods = unique(filtered.map(r => r.producto));
+  const prevProd = $('ce-prod').value;
+
+  setDropdownOptions('ce-prod', prods, '— Seleccionar producto —');
+
+  if (prods.includes(prevProd)) {
+    // Mantener selección si sigue siendo válida
+    $('ce-prod').value = prevProd;
+    onCeProdSelectedExistente();
+  } else if (prods.length === 1) {
+    // Auto-seleccionar si queda un único producto
+    $('ce-prod').value = prods[0];
+    onCeProdSelectedExistente();
+  } else {
+    // Limpiar auto-completado
+    $('ce-cat').value = '';
+    $('ce-codigo').textContent = 'Elegí un producto';
   }
+}
+
+// Se llama cuando el usuario selecciona un PRODUCTO
+function onCeProdSelectedExistente() {
+  const prod  = $('ce-prod').value;
+  const marca = $('ce-marca').value;
+  const color = $('ce-color').value;
+  const talle = $('ce-talle').value;
+
+  if (!prod) {
+    $('ce-cat').value = '';
+    $('ce-codigo').textContent = 'Elegí un producto';
+    return;
+  }
+
+  const cat = gData.catalogoStock || [];
+  // Buscar el ítem que mejor coincida con los filtros activos
+  const item = cat.find(r =>
+    r.producto === prod &&
+    (!marca || r.marca === marca) &&
+    (!color || r.color === color) &&
+    (!talle || r.talle === talle)
+  ) || cat.find(r => r.producto === prod);
+
+  if (!item) return;
+
+  // Auto-completar campos no seleccionados
+  if (!marca) $('ce-marca').value = item.marca;
+  if (!color) $('ce-color').value = item.color;
+  if (!talle) $('ce-talle').value = item.talle;
+
+  $('ce-cat').value = item.categoria;
+  const m = $('ce-marca').value, c = $('ce-color').value, t = $('ce-talle').value;
+  $('ce-codigo').textContent = item.codigo || genCodigo(m, item.categoria, c, t, prod);
 }
 
 // ── Compra submit ──────────────────────────────────────────────────────
@@ -1032,8 +1056,11 @@ function mkStackedBar(id, costosData) {
 function logDebug(data) {
   console.group('AMARA Debug v3.1');
   if (data._debug) {
-    console.log('Headers detectados:');
-    Object.entries(data._debug).forEach(([k,v]) => console.log(' ',k,'→',JSON.stringify(v)));
+    const d = data._debug;
+    console.log(`📅 Período KPIs: ${d.kpi_year || '?'}/${String(d.kpi_month||'?').padStart(2,'0')} | Ventas: ${d.ventas_rows} filas | Compras: ${d.compras_rows} filas`);
+    console.log('Headers ventas →',  JSON.stringify(d.ventas_headers));
+    console.log('Headers compras →', JSON.stringify(d.compras_headers));
+    console.log('Headers stock →',   JSON.stringify(d.stock_headers));
   }
   console.log('KPIs:', data.kpis);
   console.log('Inversión:', data.inversion);
@@ -1062,14 +1089,8 @@ async function init() {
     } else {
       renderDashboard(data);
       renderStockPanel(data.stockTabla);
-      // Pre-poblar cascading de compra para cuando el usuario abra ese panel
-      if (data.catalogoStock) {
-        // poblar marcas existentes en compra existente
-        const marcas = [...new Set(data.catalogoStock.map(r=>r.marca).filter(Boolean))].sort();
-        const sel = $('ce-marca');
-        sel.innerHTML = '<option value="">— Seleccionar —</option>';
-        marcas.forEach(m => sel.add(new Option(m,m)));
-      }
+      // Pre-poblar todos los dropdowns de compra existente
+      if (data.catalogoStock) poblarCascading();
     }
   } catch(err) {
     toast('No se pudo conectar con la API', 'err');
