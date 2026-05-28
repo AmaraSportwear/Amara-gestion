@@ -1,1074 +1,970 @@
-<!DOCTYPE html>
-<html lang="es">
-<head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width,initial-scale=1.0">
-<title>AMARA — Gestión</title>
-<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
-<style>
-:root {
-  --brown:  #7A5C42; --brown2: #5C3D2E; --sand:  #C49A6C;
-  --cream:  #F5EFE6; --white: #FFFFFF;  --gray:  #8B8B8B;
-  --glt:    #F0EBE3; --brd:   #D9CFBC;  --text:  #2D1F14;
-  --ok:     #4CAF50; --err:   #E53935;  --warn:  #F59E0B;
+// =====================================================================
+//  AMARA — Google Apps Script API v3.1
+//  Planilla: https://docs.google.com/spreadsheets/d/1HSeaqXvXp5XtZooGppN5TNee4iU00_tqS3zUNvGtnYc
+// =====================================================================
+
+const SS_ID         = '1HSeaqXvXp5XtZooGppN5TNee4iU00_tqS3zUNvGtnYc';
+const SHEET_VENTAS  = 'VENTAS';
+const SHEET_STOCK   = 'STOCK';
+const SHEET_GASTOS  = 'GASTOS';
+const SHEET_COMPRAS = 'COMPRAS';
+const CACHE_KEY     = 'amara_v31';
+const CACHE_TTL     = 180;
+
+// Colores para socias y gráficos
+const COLORES_SOCIAS = ['#7A5C42','#C49A6C','#E8C99A','#5C3D2E'];
+
+// Palabras clave para detectar fila de encabezado real
+const HEADER_KEYWORDS = [
+  'FECHA','PRODUCTO','CANTIDAD','PROVEEDOR','MARCA','TIPO','CODIGO',
+  'COLOR','TALLE','MONTO','PRECIO','CATEGORIA','SUBTIPO','TOTAL','CONCEPTO','IMPORTE'
+];
+
+// ─── Routing ──────────────────────────────────────────────────────────
+
+function doGet(e) {
+  const action = (e.parameter.action || '').trim();
+  let result;
+  try {
+    switch (action) {
+      case 'getAll':  result = getAllCached(); break;
+      case 'fifo':    result = getFIFOEndpoint(e.parameter.producto || ''); break;
+      case 'sheets':  result = listSheets(); break;
+      case 'ping':    result = { ok: true, msg: 'AMARA API v3.1 online' }; break;
+      default:        result = { ok: false, error: 'Unknown action: ' + action };
+    }
+  } catch (err) {
+    result = { ok: false, error: err.message, stack: err.stack };
+  }
+  return json(result);
 }
-*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
-body{font-family:'Segoe UI',system-ui,sans-serif;background:var(--cream);color:var(--text);min-height:100vh}
-button{cursor:pointer;font-family:inherit}
-input,select{font-family:inherit}
 
-/* ── Header ── */
-header{background:var(--brown2);padding:0 20px;display:flex;align-items:center;gap:14px;height:52px;position:sticky;top:0;z-index:100;box-shadow:0 2px 8px rgba(0,0,0,.25)}
-.logo-c{width:36px;height:36px;border-radius:50%;background:var(--sand);display:flex;align-items:center;justify-content:center;font-weight:900;font-size:.9rem;color:var(--brown2);flex-shrink:0}
-.logo-t{color:#fff;font-size:1.15rem;font-weight:700;letter-spacing:.04em}
-.logo-s{color:var(--sand);font-size:.68rem;display:block;margin-top:-2px}
-nav{display:flex;gap:4px;margin-left:auto}
-nav button{background:transparent;border:none;color:rgba(255,255,255,.65);font-size:.78rem;font-weight:600;padding:6px 12px;border-radius:6px;transition:all .15s;white-space:nowrap}
-nav button:hover{background:rgba(255,255,255,.12);color:#fff}
-nav button.active{background:var(--sand);color:var(--brown2)}
+function doPost(e) {
+  let data;
+  try { data = JSON.parse(e.postData.contents); }
+  catch (err) { return json({ ok: false, error: 'JSON invalido' }); }
+  let result;
+  try {
+    switch ((data.action || '').trim()) {
+      case 'compra': result = registrarCompra(data); break;
+      case 'venta':  result = registrarVenta(data);  break;
+      case 'gasto':  result = registrarGasto(data);  break;
+      default:       result = { ok: false, error: 'Unknown action: ' + data.action };
+    }
+    CacheService.getScriptCache().remove(CACHE_KEY);
+  } catch (err) {
+    result = { ok: false, error: err.message };
+  }
+  return json(result);
+}
 
-/* ── Main ── */
-main{max-width:1120px;margin:0 auto;padding:20px 16px 60px}
-.panel{display:none}.panel.active{display:block}
+function json(data) {
+  return ContentService
+    .createTextOutput(JSON.stringify(data))
+    .setMimeType(ContentService.MimeType.JSON);
+}
 
-/* ── Card ── */
-.card{background:var(--white);border:1px solid var(--brd);border-radius:12px;padding:18px 20px;margin-bottom:14px}
-.card-t{font-size:.67rem;font-weight:700;color:var(--gray);text-transform:uppercase;letter-spacing:.08em;margin-bottom:12px}
+// ─── Cache ────────────────────────────────────────────────────────────
 
-/* ── KPI grid ── */
-.kpi-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:12px;margin-bottom:14px}
-.kpi{background:var(--white);border:1px solid var(--brd);border-radius:12px;padding:14px 16px}
-.kpi-l{font-size:.67rem;font-weight:700;color:var(--gray);text-transform:uppercase;letter-spacing:.07em}
-.kpi-v{font-size:1.5rem;font-weight:800;color:var(--brown2);margin-top:4px;line-height:1}
-.kpi-v.pos{color:var(--ok)}.kpi-v.neg{color:var(--err)}
-.kpi-s{font-size:.7rem;color:var(--gray);margin-top:4px}
+function getAllCached() {
+  const cache = CacheService.getScriptCache();
+  const hit   = cache.get(CACHE_KEY);
+  if (hit) {
+    try { return JSON.parse(hit); } catch(e) { /* ignorar */ }
+  }
+  const fresh = buildGetAll();
+  try { cache.put(CACHE_KEY, JSON.stringify(fresh), CACHE_TTL); } catch(e) { /* muy grande */ }
+  return fresh;
+}
 
-/* ── Chart grids ── */
-.chart-row1{display:grid;grid-template-columns:2fr 1fr 1fr;gap:14px;margin-bottom:14px}
-.chart-row2{display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-bottom:14px}
-@media(max-width:800px){.chart-row1,.chart-row2{grid-template-columns:1fr}}
-.chart-box{background:var(--white);border:1px solid var(--brd);border-radius:12px;padding:14px 16px}
-.chart-box canvas{max-height:220px}
+function buildGetAll() {
+  const now   = new Date();
+  const year  = now.getFullYear();
+  const month = now.getMonth() + 1;
 
-/* ── Tables ── */
-.tbl-wrap{overflow-x:auto}
-table{width:100%;border-collapse:collapse;font-size:.82rem}
-th,td{padding:8px 10px;text-align:left;white-space:nowrap}
-th{background:var(--glt);font-weight:700;font-size:.67rem;text-transform:uppercase;color:var(--gray);letter-spacing:.05em;border-bottom:1px solid var(--brd)}
-tr:nth-child(even) td{background:#FAF7F3}
-td.num{text-align:right;font-variant-numeric:tabular-nums}
-.badge{display:inline-block;font-size:.68rem;font-weight:700;padding:2px 8px;border-radius:20px;background:var(--glt);color:var(--gray)}
-.badge-ok{background:#E8F5E9;color:#388E3C}
-.badge-low{background:#FFF3E0;color:#E65100}
-.badge-no{background:#FDECEA;color:#C62828}
+  const ss     = SpreadsheetApp.openById(SS_ID);
+  const vData  = sheetData(ss, SHEET_VENTAS);
+  const cData  = sheetData(ss, SHEET_COMPRAS);
+  const gData  = sheetData(ss, SHEET_GASTOS);
+  const stData = sheetData(ss, SHEET_STOCK);
 
-/* ── Forms ── */
-.form-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(155px,1fr));gap:10px 14px}
-.fg{display:flex;flex-direction:column;gap:4px}
-.fg label{font-size:.67rem;font-weight:700;color:var(--gray);text-transform:uppercase;letter-spacing:.06em}
-.fg input,.fg select{border:1px solid var(--brd);border-radius:7px;padding:7px 10px;font-size:.87rem;background:var(--cream);color:var(--text);transition:border .15s;width:100%}
-.fg input:focus,.fg select:focus{outline:none;border-color:var(--sand);background:var(--white)}
-.fg.s2{grid-column:span 2}.fg.s3{grid-column:span 3}
-.btn{border:none;border-radius:8px;padding:9px 22px;font-size:.84rem;font-weight:700;transition:all .15s}
-.btn-p{background:var(--brown);color:#fff}.btn-p:hover{background:var(--brown2)}
-.btn-o{background:transparent;border:1px solid var(--brd);color:var(--gray)}.btn-o:hover{border-color:var(--brown);color:var(--brown)}
-.btn-sm{padding:5px 12px;font-size:.76rem}
-.readonly-field{background:var(--glt)!important;color:var(--gray)!important}
-.code-tag{background:var(--glt);border:1px dashed var(--brd);border-radius:6px;padding:7px 10px;font-size:.82rem;font-family:monospace;color:var(--brown2);min-height:34px}
+  const kpis          = calcKpis(vData, cData, gData, year, month);
+  const tendencia     = calcTendenciaIngresos(vData, year, month);
+  const gananciaNeta  = calcGananciaNeta(vData, cData, gData, year, month);
+  const costosPorTipo = calcCostosPorTipo(gData, year, month);
+  const stockMarca    = calcStockPorMarca(stData);
+  const stockValorizado = calcStockValorizado(stData, cData);
+  const inversion     = getInversionData(ss);
+  const fichaCostos   = buildFichaCostos(vData, cData, stData);
+  const catalogoStock = buildCatalogoStock(stData);
+  const stockTabla    = buildStockTabla(stData);
+  const ultimasVentas = buildUltimasVentas(vData, 10);
 
-/* ── Toggle radio ── */
-.toggle-row{display:flex;gap:8px;margin-bottom:16px}
-.toggle-btn{border:1px solid var(--brd);background:var(--white);color:var(--gray);border-radius:8px;padding:7px 18px;font-size:.82rem;font-weight:700;transition:all .15s}
-.toggle-btn.active{background:var(--brown);color:#fff;border-color:var(--brown)}
+  return {
+    ok: true,
+    ts: now.toISOString(),
+    kpis,
+    tendencia,
+    gananciaNeta,
+    costosPorTipo,
+    stockMarca,
+    stockValorizado,
+    inversion,
+    fichaCostos,
+    catalogoStock,
+    stockTabla,
+    ultimasVentas,
+    _debug: {
+      ventas_headers:  vData.headers,
+      compras_headers: cData.headers,
+      gastos_headers:  gData.headers,
+      stock_headers:   stData.headers
+    }
+  };
+}
 
-/* ── Subtabs ── */
-.subtabs{display:flex;gap:6px;margin-bottom:14px}
-.subtab{border:1px solid var(--brd);background:var(--white);color:var(--gray);border-radius:7px;padding:5px 14px;font-size:.78rem;font-weight:700;transition:all .15s}
-.subtab:hover{border-color:var(--sand);color:var(--brown)}
-.subtab.active{background:var(--brown);color:#fff;border-color:var(--brown)}
+// ─── sheetData — detección inteligente de fila de encabezado ─────────
 
-/* ── Filter ── */
-.filter-bar{display:flex;gap:8px;align-items:center;margin-bottom:12px;flex-wrap:wrap}
-.filter-bar input{border:1px solid var(--brd);border-radius:7px;padding:6px 10px;font-size:.83rem;background:var(--white);width:230px}
-.filter-bar input:focus{outline:none;border-color:var(--sand)}
+function sheetData(ss, sheetName) {
+  const sheet = (typeof ss === 'string')
+    ? SpreadsheetApp.openById(ss).getSheetByName(sheetName)
+    : ss.getSheetByName(sheetName);
 
-/* ── Product selection list ── */
-.prod-search{position:relative}
-.prod-list{max-height:260px;overflow-y:auto;border:1px solid var(--brd);border-radius:8px;background:var(--white);margin-top:6px}
-.prod-item{padding:10px 14px;cursor:pointer;border-bottom:1px solid var(--glt);transition:background .1s}
-.prod-item:hover{background:var(--cream)}
-.prod-item:last-child{border-bottom:none}
-.prod-item.selected{background:#EDE5DA;border-left:3px solid var(--brown)}
-.prod-name{font-weight:700;font-size:.87rem}
-.prod-meta{font-size:.76rem;color:var(--gray);margin-top:2px}
-.prod-badge{float:right;font-size:.74rem;color:var(--brown2);font-weight:700}
-.selected-box{background:var(--glt);border:1px solid var(--brd);border-radius:8px;padding:12px 14px;margin-top:8px;display:none}
-.selected-box.show{display:block}
+  if (!sheet || sheet.getLastRow() < 1 || sheet.getLastColumn() < 1)
+    return { headers: [], rows: [] };
 
-/* ── Toast ── */
-#toast{position:fixed;bottom:20px;right:20px;background:var(--brown2);color:#fff;padding:12px 20px;border-radius:10px;font-size:.85rem;font-weight:600;opacity:0;transform:translateY(10px);transition:all .25s;z-index:999;max-width:300px;pointer-events:none}
-#toast.show{opacity:1;transform:translateY(0)}
-#toast.err{background:var(--err)}#toast.ok{background:var(--ok)}
+  const vals = sheet.getDataRange().getValues();
 
-/* ── Loader ── */
-#loader{position:fixed;inset:0;background:rgba(245,239,230,.92);display:flex;flex-direction:column;align-items:center;justify-content:center;z-index:200;gap:14px}
-.spinner{width:40px;height:40px;border:4px solid var(--brd);border-top-color:var(--brown);border-radius:50%;animation:spin .75s linear infinite}
-@keyframes spin{to{transform:rotate(360deg)}}
-#loader p{font-size:.88rem;color:var(--gray);font-weight:600}
+  // Buscar la primera fila que contenga al menos una keyword de encabezado
+  let headerIdx = 0;
+  for (let i = 0; i < Math.min(5, vals.length); i++) {
+    const upper = vals[i].map(c => String(c).trim().toUpperCase());
+    if (HEADER_KEYWORDS.some(k => upper.includes(k))) { headerIdx = i; break; }
+  }
 
-/* ── Dropdowns ── */
-.dd-wrap{position:relative}
-.dd-list{position:absolute;top:100%;left:0;right:0;background:var(--white);border:1px solid var(--brd);border-radius:8px;box-shadow:0 4px 14px rgba(0,0,0,.12);z-index:50;max-height:200px;overflow-y:auto;list-style:none;margin-top:2px}
-.dd-list li{padding:8px 12px;cursor:pointer;font-size:.84rem;border-bottom:1px solid var(--glt)}
-.dd-list li:hover{background:var(--cream)}
-.dd-list li:last-child{border-bottom:none}
+  const headers = vals[headerIdx].map(h => String(h).trim().toUpperCase());
+  const rows    = vals.slice(headerIdx + 1)
+    .filter(r => r.some(c => c !== '' && c !== null && c !== undefined));
 
-/* ── Inversion cards ── */
-.inv-grid{display:flex;gap:12px;flex-wrap:wrap;margin-bottom:14px}
-.inv-card{border-radius:10px;padding:12px 18px;min-width:150px}
-</style>
-</head>
-<body>
+  return { headers, rows };
+}
 
-<div id="loader"><div class="spinner"></div><p>Cargando AMARA...</p></div>
-<div id="toast"></div>
+// ─── Columnas ─────────────────────────────────────────────────────────
 
-<header>
-  <div style="display:flex;align-items:center;gap:10px">
-    <div class="logo-c">A</div>
-    <div>
-      <span class="logo-t">AMARA</span>
-      <span class="logo-s">Gestión deportiva</span>
-    </div>
-  </div>
-  <nav>
-    <button class="active" onclick="showPanel('dashboard',this)">Dashboard</button>
-    <button onclick="showPanel('stock',this)">Stock</button>
-    <button onclick="showPanel('compra',this)">Compra</button>
-    <button onclick="showPanel('venta',this)">Venta</button>
-    <button onclick="showPanel('gasto',this)">Gasto</button>
-  </nav>
-</header>
+// Busca el índice por nombre exacto (normalizado)
+function col(headers, name) {
+  return headers.indexOf(String(name).trim().toUpperCase());
+}
 
-<main>
+// Busca el primer nombre que coincida entre varios alias
+function colAny(headers, ...names) {
+  for (const n of names) {
+    const i = headers.indexOf(n.trim().toUpperCase());
+    if (i >= 0) return i;
+  }
+  return -1;
+}
 
-<!-- ══════ DASHBOARD ══════ -->
-<div id="panel-dashboard" class="panel active">
+// ─── Fechas ───────────────────────────────────────────────────────────
 
-  <div class="kpi-grid">
-    <div class="kpi">
-      <div class="kpi-l">Ventas del mes</div>
-      <div class="kpi-v" id="kv">—</div>
-      <div class="kpi-s" id="ku">0 unidades</div>
-    </div>
-    <div class="kpi">
-      <div class="kpi-l">Ganancia neta (mes)</div>
-      <div class="kpi-v" id="kg">—</div>
-    </div>
-    <div class="kpi">
-      <div class="kpi-l">Stock valorizado</div>
-      <div class="kpi-v" id="ksv">—</div>
-    </div>
-    <div class="kpi">
-      <div class="kpi-l">Inversion total</div>
-      <div class="kpi-v" id="ki">—</div>
-    </div>
-  </div>
+function parseDate(val) {
+  if (!val) return null;
+  if (val instanceof Date) return isNaN(val.getTime()) ? null : val;
+  const s = String(val).trim();
+  // Formato argentino DD/MM/YYYY o DD/MM/YY
+  const m = s.match(/^(\d{1,2})\/(\d{1,2})\/(\d{2,4})$/);
+  if (m) {
+    const yr = m[3].length === 2 ? 2000 + Number(m[3]) : Number(m[3]);
+    const d  = new Date(yr, Number(m[2]) - 1, Number(m[1]));
+    return isNaN(d.getTime()) ? null : d;
+  }
+  const d = new Date(val);
+  return isNaN(d.getTime()) ? null : d;
+}
 
-  <div class="chart-row1">
-    <div class="chart-box">
-      <div class="card-t">Ingresos — ultimos 6 meses</div>
-      <canvas id="chVentas"></canvas>
-    </div>
-    <div class="chart-box">
-      <div class="card-t">Stock por marca</div>
-      <canvas id="chStock"></canvas>
-    </div>
-    <div class="chart-box">
-      <div class="card-t">Inversion por socia</div>
-      <canvas id="chInv"></canvas>
-    </div>
-  </div>
+function sameYM(val, year, month) {
+  const d = parseDate(val);
+  if (!d) return false;
+  return d.getFullYear() === year && (d.getMonth() + 1) === month;
+}
 
-  <div class="chart-row2">
-    <div class="chart-box">
-      <div class="card-t">Ganancia neta — ultimos 6 meses</div>
-      <canvas id="chGanancia"></canvas>
-    </div>
-    <div class="chart-box">
-      <div class="card-t">Costos operativos por tipo</div>
-      <canvas id="chCostos"></canvas>
-    </div>
-  </div>
+function mesLabel(m) {
+  return ['Ene','Feb','Mar','Abr','May','Jun','Jul','Ago','Sep','Oct','Nov','Dic'][m - 1];
+}
 
-  <div class="card">
-    <div class="card-t">Ultimas ventas</div>
-    <div class="tbl-wrap">
-      <table>
-        <thead><tr><th>Fecha</th><th>Producto</th><th class="num">Cant.</th><th class="num">Monto</th></tr></thead>
-        <tbody id="tbl-uv"></tbody>
-      </table>
-    </div>
-  </div>
-</div>
+function makeMeses(year, month, n) {
+  const arr = [];
+  for (let i = n - 1; i >= 0; i--) {
+    let m = month - i, y = year;
+    while (m <= 0) { m += 12; y--; }
+    arr.push({ y, m, label: mesLabel(m), total: 0, ganancia: 0, gastos: 0, tipos: {} });
+  }
+  return arr;
+}
 
-<!-- ══════ STOCK ══════ -->
-<div id="panel-stock" class="panel">
-  <div class="card">
-    <div class="card-t">Stock actual</div>
-    <div class="filter-bar">
-      <input type="text" id="filtroStock" placeholder="Buscar producto, marca, codigo..." oninput="filtrarStock()">
-      <span id="stk-cnt" style="font-size:.77rem;color:var(--gray)"></span>
-    </div>
-    <div class="tbl-wrap">
-      <table>
-        <thead><tr><th>Codigo</th><th>Marca</th><th>Producto</th><th>Color</th><th>Talle</th><th class="num">Cant.</th><th>Categoria</th></tr></thead>
-        <tbody id="tbl-stock"></tbody>
-      </table>
-    </div>
-  </div>
-</div>
+// ─── KPIs del mes ─────────────────────────────────────────────────────
 
-<!-- ══════ COMPRA ══════ -->
-<div id="panel-compra" class="panel">
-  <div class="card">
-    <div class="card-t">Tipo de compra</div>
-    <div class="toggle-row">
-      <button class="toggle-btn active" onclick="setCompraMode('nuevo',this)">Producto nuevo</button>
-      <button class="toggle-btn" onclick="setCompraMode('existente',this)">Producto existente</button>
-    </div>
+function calcKpis(vData, cData, gData, year, month) {
+  const { headers: vh, rows: vr } = vData;
+  const vFecha  = colAny(vh, 'FECHA');
+  // Todos los alias posibles de la columna de ingreso por venta
+  const vMonto  = colAny(vh, 'VALOR VENTA','MONTO','TOTAL','SUBTOTAL','IMPORTE',
+                            'VALOR TOTAL','PRECIO VENTA','PRECIO DE VENTA');
+  const vPrecio = colAny(vh, 'PRECIO UNITARIO','PRECIO DE VENTA','PRECIO VENTA','PRECIO');
+  const vCant   = colAny(vh, 'CANTIDAD','UNIDADES','CANT');
+  const vCosto  = colAny(vh, 'COSTO','PRECIO COSTO','PRECIO DE COSTO','COSTO UNITARIO','COSTO TOTAL');
+  const vProd   = colAny(vh, 'PRODUCTO');
+  // Columna GANANCIA pre-calculada en el sheet (si existe)
+  const vGanancia = colAny(vh, 'GANANCIA','MARGEN');
 
-    <!-- Formulario NUEVO producto -->
-    <div id="compra-nuevo">
-      <form id="form-compra-n" onsubmit="submitCompra(event,'nuevo')">
-        <div class="form-grid">
-          <div class="fg">
-            <label>Fecha</label>
-            <input type="date" name="fecha" id="cn-fecha">
-          </div>
-          <div class="fg">
-            <label>Marca / Proveedor</label>
-            <input type="text" name="marca" id="cn-marca" required placeholder="Adidas, Nike..." oninput="actualizarCodigoN()">
-          </div>
-          <div class="fg">
-            <label>Categoria</label>
-            <select name="categoria" id="cn-cat" onchange="actualizarCodigoN()">
-              <option value="">— Seleccionar —</option>
-              <option>Remera</option><option>Buzo</option><option>Campera</option>
-              <option>Pantalon</option><option>Short</option><option>Calza</option>
-              <option>Camiseta</option><option>Conjunto</option><option>Medias</option>
-              <option>Zapatilla</option><option>Chaleco</option><option>Musculosa</option>
-            </select>
-          </div>
-          <div class="fg">
-            <label>Nombre del producto</label>
-            <input type="text" name="producto" id="cn-prod" required placeholder="Ej: Remera Deportiva" oninput="actualizarCodigoN()">
-          </div>
-          <div class="fg">
-            <label>Color</label>
-            <input type="text" name="color" id="cn-color" placeholder="Negro, Blanco..." oninput="actualizarCodigoN()">
-          </div>
-          <div class="fg">
-            <label>Talle</label>
-            <select name="talle" id="cn-talle" onchange="actualizarCodigoN()">
-              <option value="">—</option>
-              <option>XS</option><option>S</option><option>M</option><option>L</option>
-              <option>XL</option><option>XXL</option><option>36</option><option>38</option>
-              <option>40</option><option>42</option><option>44</option><option>U</option>
-            </select>
-          </div>
-          <div class="fg">
-            <label>Unidades</label>
-            <input type="number" name="cantidad" id="cn-cant" min="1" value="1" required>
-          </div>
-          <div class="fg">
-            <label>Precio costo (u.)</label>
-            <input type="number" name="precioCosto" id="cn-precio" min="0" step="1" required>
-          </div>
-          <div class="fg s2">
-            <label>Codigo generado</label>
-            <div class="code-tag" id="cn-codigo">Completá los campos para generar</div>
-          </div>
-        </div>
-        <div style="margin-top:14px;display:flex;gap:10px;align-items:center">
-          <button type="submit" class="btn btn-p">Registrar compra</button>
-          <span id="compra-n-st" style="font-size:.82rem;color:var(--err)"></span>
-        </div>
-      </form>
-    </div>
+  const costoMap = getCostosDesdeCompras(cData);
 
-    <!-- Formulario EXISTENTE con cascading -->
-    <div id="compra-existente" style="display:none">
-      <form id="form-compra-e" onsubmit="submitCompra(event,'existente')">
-        <div class="form-grid">
-          <div class="fg">
-            <label>Fecha</label>
-            <input type="date" name="fecha" id="ce-fecha">
-          </div>
-          <div class="fg">
-            <label>Marca</label>
-            <select id="ce-marca" onchange="onCeMarcaChange()">
-              <option value="">— Seleccionar —</option>
-            </select>
-          </div>
-          <div class="fg">
-            <label>Producto</label>
-            <select id="ce-prod" onchange="onCeProdChange()">
-              <option value="">— Primero elegí marca —</option>
-            </select>
-          </div>
-          <div class="fg">
-            <label>Color</label>
-            <select id="ce-color" onchange="onCeColorChange()">
-              <option value="">—</option>
-            </select>
-          </div>
-          <div class="fg">
-            <label>Talle</label>
-            <select id="ce-talle" onchange="onCeTalleChange()">
-              <option value="">—</option>
-            </select>
-          </div>
-          <div class="fg">
-            <label>Categoria</label>
-            <input type="text" id="ce-cat" class="readonly-field" readonly>
-          </div>
-          <div class="fg">
-            <label>Unidades</label>
-            <input type="number" name="cantidad" id="ce-cant" min="1" value="1" required>
-          </div>
-          <div class="fg">
-            <label>Precio costo (u.)</label>
-            <input type="number" name="precioCosto" id="ce-precio" min="0" step="1" required>
-          </div>
-          <div class="fg s2">
-            <label>Codigo</label>
-            <div class="code-tag" id="ce-codigo">Elegí un producto</div>
-          </div>
-        </div>
-        <div style="margin-top:14px;display:flex;gap:10px;align-items:center">
-          <button type="submit" class="btn btn-p">Registrar compra</button>
-          <span id="compra-e-st" style="font-size:.82rem;color:var(--err)"></span>
-        </div>
-      </form>
-    </div>
-  </div>
-</div>
+  let ingresosMes = 0, costoMes = 0, unidadesMes = 0;
+  for (const r of vr) {
+    if (!sameYM(r[vFecha], year, month)) continue;
 
-<!-- ══════ VENTA ══════ -->
-<div id="panel-venta" class="panel">
-  <div class="card">
-    <div class="card-t">Seleccionar producto del stock</div>
-    <div class="filter-bar">
-      <input type="text" id="v-buscar" placeholder="Buscar por nombre, marca, color..." oninput="filtrarProductosVenta(this.value)">
-    </div>
-    <div id="v-lista" class="prod-list"></div>
-  </div>
+    // Monto: VALOR VENTA o precio×cant
+    let monto = vMonto >= 0 ? Number(r[vMonto] || 0) : 0;
+    if (monto === 0 && vPrecio >= 0) {
+      const c = vCant >= 0 ? Number(r[vCant] || 1) : 1;
+      monto = c * Number(r[vPrecio] || 0);
+    }
 
-  <!-- Card de formulario, aparece al seleccionar -->
-  <div id="v-form-card" class="card" style="display:none">
-    <div class="card-t">Detalle de la venta</div>
-    <div id="v-sel-info" class="selected-box show" style="margin-bottom:14px"></div>
-    <form id="form-venta" onsubmit="submitVenta(event)">
-      <div class="form-grid">
-        <div class="fg">
-          <label>Fecha</label>
-          <input type="date" name="fecha" id="v-fecha">
-        </div>
-        <div class="fg">
-          <label>Cantidad</label>
-          <input type="number" name="cantidad" id="v-cantidad" min="1" value="1" required oninput="actualizarCostoVenta()">
-        </div>
-        <div class="fg">
-          <label>Precio de venta (u.)</label>
-          <input type="number" name="precioVenta" id="v-precio" min="0" step="1" required>
-        </div>
-        <div class="fg">
-          <label>Costo FIFO (u.) — auto</label>
-          <input type="number" id="v-costo-fifo" class="readonly-field" readonly>
-        </div>
-        <div class="fg">
-          <label>Total ingreso estimado</label>
-          <input type="number" id="v-total" class="readonly-field" readonly>
-        </div>
-      </div>
-      <input type="hidden" id="v-prod" name="producto">
-      <input type="hidden" id="v-marca" name="marca">
-      <input type="hidden" id="v-color" name="color">
-      <input type="hidden" id="v-talle" name="talle">
-      <input type="hidden" id="v-codigo" name="codigo">
-      <div style="margin-top:14px;display:flex;gap:10px;align-items:center;flex-wrap:wrap">
-        <button type="submit" class="btn btn-p">Registrar venta</button>
-        <button type="button" class="btn btn-o btn-sm" onclick="cancelarVenta()">Cambiar producto</button>
-        <span id="venta-st" style="font-size:.82rem;color:var(--err)"></span>
-      </div>
-    </form>
-  </div>
-</div>
+    // Si no hay ingreso, saltar la fila (evita phantom cost entries)
+    if (monto === 0) continue;
 
-<!-- ══════ GASTO ══════ -->
-<div id="panel-gasto" class="panel">
-  <div class="subtabs">
-    <button class="subtab active" onclick="showSubtab('costo',this)">Costo operativo</button>
-    <button class="subtab" onclick="showSubtab('inversion',this)">Inversion</button>
-  </div>
+    const cant = vCant >= 0 ? Number(r[vCant] || 1) : 1;
+    ingresosMes += monto;
+    unidadesMes += cant;
 
-  <div id="gasto-costo">
-    <div class="card">
-      <div class="card-t">Registrar costo operativo</div>
-      <form id="form-gasto" onsubmit="submitGasto(event)">
-        <div class="form-grid">
-          <div class="fg">
-            <label>Fecha</label>
-            <input type="date" name="fecha" id="g-fecha">
-          </div>
-          <div class="fg">
-            <label>Categoria</label>
-            <select name="tipo" id="g-tipo">
-              <option value="Costo">Costo operativo</option>
-              <option value="Envio">Envio / flete</option>
-              <option value="Publicidad">Publicidad</option>
-              <option value="Servicio">Servicio</option>
-              <option value="Alquiler">Alquiler</option>
-              <option value="Otro">Otro</option>
-            </select>
-          </div>
-          <div class="fg s2">
-            <label>Descripcion</label>
-            <input type="text" name="desc" id="g-desc" required placeholder="Detalle del gasto">
-          </div>
-          <div class="fg">
-            <label>Monto</label>
-            <input type="number" name="monto" id="g-monto" min="0" step="1" required>
-          </div>
-        </div>
-        <div style="margin-top:14px"><button type="submit" class="btn btn-p">Registrar gasto</button></div>
-      </form>
-    </div>
-  </div>
+    // Costo: leer columna directa o estimar desde COMPRAS
+    let costo = vCosto >= 0 ? Number(r[vCosto] || 0) : 0;
+    if (costo === 0 && vGanancia >= 0) {
+      // Si hay columna GANANCIA pre-calculada, deducir costo
+      costo = monto - Number(r[vGanancia] || 0);
+    }
+    if (costo === 0) {
+      const prod = String(r[vProd] || '').trim().toUpperCase();
+      costo = (costoMap[prod] || 0) * cant;
+    }
+    costoMes += costo;
+  }
 
-  <div id="gasto-inversion" style="display:none">
-    <div class="card">
-      <div class="card-t">Capital por socia</div>
-      <div class="inv-grid" id="inv-cards"></div>
-      <div style="max-width:280px" class="chart-box">
-        <canvas id="chInvDet"></canvas>
-      </div>
-    </div>
-    <div class="card">
-      <div class="card-t">Registrar movimiento</div>
-      <form id="form-inversion" onsubmit="submitInversion(event)">
-        <div class="form-grid">
-          <div class="fg">
-            <label>Fecha</label>
-            <input type="date" name="fecha" id="gi-fecha">
-          </div>
-          <div class="fg">
-            <label>Tipo de movimiento</label>
-            <select id="gi-tipo" name="tipoMov">
-              <option value="Inversion">Inversion</option>
-              <option value="Retiro">Retiro de ganancias</option>
-            </select>
-          </div>
-          <div class="fg">
-            <label>Socia</label>
-            <select id="gi-socia" name="socia"></select>
-          </div>
-          <div class="fg s2">
-            <label>Concepto</label>
-            <input type="text" name="desc" id="gi-desc" required placeholder="Descripcion">
-          </div>
-          <div class="fg">
-            <label>Monto</label>
-            <input type="number" name="monto" id="gi-monto" min="0" step="1" required>
-          </div>
-        </div>
-        <div style="margin-top:14px"><button type="submit" class="btn btn-p">Registrar</button></div>
-      </form>
-    </div>
-  </div>
-</div>
+  const { headers: gh, rows: gr } = gData;
+  const gFecha = colAny(gh, 'FECHA');
+  const gMonto = colAny(gh, 'MONTO','TOTAL','IMPORTE','SUBTOTAL');
+  const gTipo  = colAny(gh, 'TIPO','CATEGORIA','CATEGORÍA');
+  let gastosMes = 0;
+  for (const r of gr) {
+    if (!sameYM(r[gFecha], year, month)) continue;
+    // Excluir inversiones y retiros de los gastos operativos
+    const tipo = String(r[gTipo] || '').toUpperCase();
+    if (tipo.includes('INVERSION') || tipo.includes('RETIRO') || tipo.includes('COMPRA')) continue;
+    gastosMes += Number(r[gMonto] || 0);
+  }
 
-</main>
+  return {
+    ingresosMes,
+    costoMes,
+    gastosMes,
+    gananciaMes: ingresosMes - costoMes - gastosMes,
+    unidadesMes
+  };
+}
 
-<script>
-const API_URL = 'https://script.google.com/macros/s/AKfycbynfVVo94aN9Lfp8NHF7sfnLFzrctyD6PUtoQIqgoyOcvA3jTPVxcMFJS8j7O2_cjaUnw/exec';
+// Mapa PRODUCTO → precio de costo más reciente en COMPRAS
+function getCostosDesdeCompras(cData) {
+  const { headers, rows } = cData;
+  const cFecha = colAny(headers, 'FECHA');
+  const cProd  = colAny(headers, 'PRODUCTO');
+  const cPrice = colAny(headers, 'PRECIO COSTO','PRECIO DE COSTO','PRECIO UNITARIO','PRECIO','COSTO');
 
-// ── Estado global ──────────────────────────────────────────────────────
-let gData      = null;   // respuesta de getAll
-let stockRows  = [];     // para filtro en panel Stock
-let ventaRows  = [];     // para filtro en panel Venta
-let ventaSel   = null;   // producto seleccionado para venta
-let charts     = {};
+  const sorted = [...rows].sort((a, b) => {
+    const da = parseDate(a[cFecha]), db = parseDate(b[cFecha]);
+    return (da || 0) - (db || 0);
+  });
 
-// ── Codigo automático ──────────────────────────────────────────────────
-const TIPO_ABR  = {REMERA:'RE',BUZO:'BU',CAMPERA:'CA',PANTALON:'PA',SHORT:'SH',CALZA:'CL',MEDIAS:'ME',ZAPATILLA:'ZA',CAMISETA:'CM',CONJUNTO:'CO',CHALECO:'CH',MUSCULOSA:'MU'};
-const COLOR_ABR = {NEGRO:'NE',BLANCO:'BL',ROJO:'RO',AZUL:'AZ',VERDE:'VE',AMARILLO:'AM',GRIS:'GR',ROSA:'RS',NARANJA:'NA',VIOLETA:'VI',CELESTE:'CE',MARRON:'MR',BEIGE:'BE'};
+  const map = {};
+  for (const r of sorted) {
+    const prod  = String(r[cProd] || '').trim().toUpperCase();
+    const price = Number(r[cPrice] || 0);
+    if (prod && price > 0) map[prod] = price;
+  }
+  return map;
+}
 
-function genCodigo(marca,tipo,color,talle,prod) {
-  const m = (marca||'').toUpperCase().replace(/\s+/g,'').slice(0,4).padEnd(4,'X');
-  const t = TIPO_ABR[(tipo||'').toUpperCase()] || (tipo||'').toUpperCase().slice(0,2).padEnd(2,'X');
-  const c = COLOR_ABR[(color||'').toUpperCase()] || (color||'').toUpperCase().slice(0,2).padEnd(2,'X');
-  const z = ((talle||'').toUpperCase()[0]) || 'X';
-  const p = (prod||'').toUpperCase().replace(/\s+/g,'').slice(0,5).padEnd(5,'X');
+// ─── FIFO ─────────────────────────────────────────────────────────────
+
+function calcFIFOParaProducto(ss, producto, cantidadNueva) {
+  const cData = sheetData(ss, SHEET_COMPRAS);
+  const vData = sheetData(ss, SHEET_VENTAS);
+
+  const { headers: ch, rows: cr } = cData;
+  const cFechaC = colAny(ch, 'FECHA');
+  const cProdC  = colAny(ch, 'PRODUCTO');
+  const cPriceC = colAny(ch, 'PRECIO COSTO','PRECIO DE COSTO','PRECIO UNITARIO','PRECIO','COSTO');
+  const cCantC  = colAny(ch, 'CANTIDAD');
+
+  const prodUpper = String(producto).trim().toUpperCase();
+
+  // Lotes de compra ordenados por fecha ASC
+  const lotes = cr
+    .filter(r => String(r[cProdC] || '').trim().toUpperCase() === prodUpper)
+    .map(r => ({
+      fecha:   parseDate(r[cFechaC]),
+      precio:  Number(r[cPriceC] || 0),
+      restante: Number(r[cCantC]  || 0)
+    }))
+    .filter(l => l.restante > 0 && l.precio > 0)
+    .sort((a, b) => (a.fecha || 0) - (b.fecha || 0));
+
+  if (!lotes.length) return { precio: 0, primero: 0, agotado: true };
+
+  // Total unidades ya vendidas de este producto
+  const { headers: vh, rows: vr } = vData;
+  const vProdV = colAny(vh, 'PRODUCTO');
+  const vCantV = colAny(vh, 'CANTIDAD');
+  let yaVendidas = 0;
+  for (const r of vr) {
+    if (String(r[vProdV] || '').trim().toUpperCase() === prodUpper)
+      yaVendidas += Number(r[vCantV] || 0);
+  }
+
+  // Consumir lotes ya vendidos
+  for (const lote of lotes) {
+    if (yaVendidas <= 0) break;
+    const consumir = Math.min(lote.restante, yaVendidas);
+    lote.restante  -= consumir;
+    yaVendidas     -= consumir;
+  }
+
+  // Calcular costo FIFO para cantidadNueva unidades
+  let porAsignar = cantidadNueva || 1;
+  let totalCosto = 0, asignadas = 0;
+  for (const lote of lotes) {
+    if (porAsignar <= 0 || lote.restante <= 0) continue;
+    const usar = Math.min(lote.restante, porAsignar);
+    totalCosto  += usar * lote.precio;
+    asignadas   += usar;
+    porAsignar  -= usar;
+  }
+
+  const precio  = asignadas > 0 ? totalCosto / asignadas : 0;
+  const primero = (lotes.find(l => l.restante > 0) || {}).precio || 0;
+
+  return { precio, primero, agotado: lotes.every(l => l.restante <= 0) };
+}
+
+function getFIFOEndpoint(producto) {
+  if (!producto) return { ok: false, error: 'producto requerido' };
+  const ss   = SpreadsheetApp.openById(SS_ID);
+  const fifo = calcFIFOParaProducto(ss, producto, 1);
+  return { ok: true, producto, precio: fifo.precio, primero: fifo.primero, agotado: fifo.agotado };
+}
+
+// ─── Ficha de costos FIFO (todos los productos en stock) ─────────────
+
+function buildFichaCostos(vData, cData, stData) {
+  const { headers: ch, rows: cr } = cData;
+  const cFechaC = colAny(ch, 'FECHA');
+  const cProdC  = colAny(ch, 'PRODUCTO');
+  const cPriceC = colAny(ch, 'PRECIO COSTO','PRECIO DE COSTO','PRECIO UNITARIO','PRECIO','COSTO');
+  const cCantC  = colAny(ch, 'CANTIDAD');
+
+  const { headers: vh, rows: vr } = vData;
+  const vProdV = colAny(vh, 'PRODUCTO');
+  const vCantV = colAny(vh, 'CANTIDAD');
+
+  const { headers: sh, rows: sr } = stData;
+  const cProdS = colAny(sh, 'PRODUCTO');
+
+  // Construir lotes por producto (compras)
+  const comprasPorProd = {};
+  for (const r of cr) {
+    const prod  = String(r[cProdC] || '').trim().toUpperCase();
+    const cant  = Number(r[cCantC] || 0);
+    const precio = Number(r[cPriceC] || 0);
+    if (!prod || cant <= 0 || precio <= 0) continue;
+    if (!comprasPorProd[prod]) comprasPorProd[prod] = [];
+    comprasPorProd[prod].push({ fecha: parseDate(r[cFechaC]), precio, restante: cant });
+  }
+  for (const prod in comprasPorProd)
+    comprasPorProd[prod].sort((a, b) => (a.fecha || 0) - (b.fecha || 0));
+
+  // Total vendido por producto
+  const vendidoPorProd = {};
+  for (const r of vr) {
+    const prod = String(r[vProdV] || '').trim().toUpperCase();
+    const cant = Number(r[vCantV] || 0);
+    if (prod && cant > 0) vendidoPorProd[prod] = (vendidoPorProd[prod] || 0) + cant;
+  }
+
+  // Calcular FIFO para cada producto en stock
+  const result = {};
+  const prodsEnStock = new Set(
+    sr.map(r => String(r[cProdS] || '').trim().toUpperCase()).filter(Boolean)
+  );
+
+  for (const prod of prodsEnStock) {
+    const lotes = (comprasPorProd[prod] || []).map(l => ({ precio: l.precio, restante: l.restante }));
+    let yaVendidas = vendidoPorProd[prod] || 0;
+    for (const lote of lotes) {
+      if (yaVendidas <= 0) break;
+      const consumir = Math.min(lote.restante, yaVendidas);
+      lote.restante  -= consumir;
+      yaVendidas     -= consumir;
+    }
+    const sig = lotes.find(l => l.restante > 0);
+    result[prod] = sig ? sig.precio : 0;
+  }
+
+  return result;
+}
+
+// ─── Tendencia de ingresos (6 meses) ─────────────────────────────────
+
+function calcTendenciaIngresos(vData, year, month) {
+  const { headers, rows } = vData;
+  const vFecha  = colAny(headers, 'FECHA');
+  const vMonto  = colAny(headers, 'VALOR VENTA','MONTO','TOTAL','SUBTOTAL','IMPORTE',
+                            'VALOR TOTAL','PRECIO VENTA','PRECIO DE VENTA');
+  const vPrecio = colAny(headers, 'PRECIO UNITARIO','PRECIO DE VENTA','PRECIO VENTA','PRECIO');
+  const vCant   = colAny(headers, 'CANTIDAD','UNIDADES','CANT');
+
+  const meses = makeMeses(year, month, 6);
+  for (const r of rows) {
+    const d = parseDate(r[vFecha]);
+    if (!d) continue;
+    const slot = meses.find(x => x.y === d.getFullYear() && x.m === d.getMonth() + 1);
+    if (!slot) continue;
+    let monto = vMonto >= 0 ? Number(r[vMonto] || 0) : 0;
+    if (monto === 0 && vPrecio >= 0) {
+      const c = vCant >= 0 ? Number(r[vCant] || 1) : 1;
+      monto = c * Number(r[vPrecio] || 0);
+    }
+    slot.total += monto;
+  }
+
+  return { labels: meses.map(x => x.label), valores: meses.map(x => x.total) };
+}
+
+// ─── Ganancia neta mensual ────────────────────────────────────────────
+
+function calcGananciaNeta(vData, cData, gData, year, month) {
+  const meses = makeMeses(year, month, 6);
+
+  const { headers: vh, rows: vr } = vData;
+  const vFecha    = colAny(vh, 'FECHA');
+  const vMonto    = colAny(vh, 'VALOR VENTA','MONTO','TOTAL','SUBTOTAL','IMPORTE',
+                              'VALOR TOTAL','PRECIO VENTA','PRECIO DE VENTA');
+  const vPrecio   = colAny(vh, 'PRECIO UNITARIO','PRECIO DE VENTA','PRECIO VENTA','PRECIO');
+  const vCant     = colAny(vh, 'CANTIDAD','UNIDADES','CANT');
+  const vCosto    = colAny(vh, 'COSTO','PRECIO COSTO','PRECIO DE COSTO','COSTO UNITARIO','COSTO TOTAL');
+  const vProd     = colAny(vh, 'PRODUCTO');
+  const vGanancia = colAny(vh, 'GANANCIA','MARGEN');
+  const costos    = getCostosDesdeCompras(cData);
+
+  for (const r of vr) {
+    const d = parseDate(r[vFecha]);
+    if (!d) continue;
+    const slot = meses.find(x => x.y === d.getFullYear() && x.m === d.getMonth() + 1);
+    if (!slot) continue;
+
+    let monto = vMonto >= 0 ? Number(r[vMonto] || 0) : 0;
+    if (monto === 0 && vPrecio >= 0) {
+      const c = vCant >= 0 ? Number(r[vCant] || 1) : 1;
+      monto = c * Number(r[vPrecio] || 0);
+    }
+    if (monto === 0) continue; // fila sin venta real
+
+    // Si hay columna GANANCIA pre-calculada, usarla directamente
+    if (vGanancia >= 0 && Number(r[vGanancia] || 0) !== 0) {
+      slot.ganancia += Number(r[vGanancia] || 0);
+      continue;
+    }
+
+    const cant = vCant >= 0 ? Number(r[vCant] || 1) : 1;
+    let costo  = vCosto >= 0 ? Number(r[vCosto] || 0) : 0;
+    if (costo === 0) costo = (costos[String(r[vProd] || '').trim().toUpperCase()] || 0) * cant;
+    slot.ganancia += (monto - costo);
+  }
+
+  const { headers: gh, rows: gr } = gData;
+  const gFecha  = colAny(gh, 'FECHA');
+  const gMonto  = colAny(gh, 'MONTO','TOTAL','IMPORTE');
+  const gTipoG  = colAny(gh, 'TIPO','CATEGORIA','CATEGORÍA');
+  for (const r of gr) {
+    const d = parseDate(r[gFecha]);
+    if (!d) continue;
+    const slot = meses.find(x => x.y === d.getFullYear() && x.m === d.getMonth() + 1);
+    if (!slot) continue;
+    // Excluir inversiones y retiros — solo gastos operativos
+    const tipo = String(r[gTipoG] || '').toUpperCase();
+    if (tipo.includes('INVERSION') || tipo.includes('RETIRO') || tipo.includes('COMPRA')) continue;
+    slot.gastos += Number(r[gMonto] || 0);
+  }
+
+  return {
+    labels:  meses.map(x => x.label),
+    valores: meses.map(x => x.ganancia - x.gastos)
+  };
+}
+
+// ─── Costos operativos por tipo mensual ───────────────────────────────
+
+function calcCostosPorTipo(gData, year, month) {
+  const meses = makeMeses(year, month, 6);
+  const { headers, rows } = gData;
+  const gFecha = colAny(headers, 'FECHA');
+  const gMonto = colAny(headers, 'MONTO','TOTAL','IMPORTE');
+  const gTipo  = colAny(headers, 'TIPO','CATEGORIA','CATEGORÍA','DESCRIPCION');
+
+  const tiposSet = new Set();
+  for (const r of rows) {
+    const d = parseDate(r[gFecha]);
+    if (!d) continue;
+    const slot = meses.find(x => x.y === d.getFullYear() && x.m === d.getMonth() + 1);
+    if (!slot) continue;
+    const tipo  = String(r[gTipo] || 'Otro').trim() || 'Otro';
+    // Excluir inversiones y retiros del histograma de costos operativos
+    const tipoUp = tipo.toUpperCase();
+    if (tipoUp.includes('INVERSION') || tipoUp.includes('RETIRO')) continue;
+    const monto = Number(r[gMonto] || 0);
+    tiposSet.add(tipo);
+    slot.tipos[tipo] = (slot.tipos[tipo] || 0) + monto;
+  }
+
+  const tipos = [...tiposSet];
+  return {
+    labels:   meses.map(x => x.label),
+    tipos,
+    datasets: tipos.map(tipo => ({
+      tipo,
+      valores: meses.map(x => x.tipos[tipo] || 0)
+    }))
+  };
+}
+
+// ─── Stock por marca ──────────────────────────────────────────────────
+
+function calcStockPorMarca(stData) {
+  const { headers, rows } = stData;
+  const cMarca = colAny(headers, 'PROVEEDOR','MARCA');
+  const cCant  = colAny(headers, 'CANTIDAD','STOCK','UNIDADES');
+  const map    = {};
+  for (const r of rows) {
+    const marca = String(r[cMarca] || 'Sin marca').trim();
+    map[marca]  = (map[marca] || 0) + Number(r[cCant] || 0);
+  }
+  const entries = Object.entries(map).sort((a, b) => b[1] - a[1]);
+  return { labels: entries.map(e => e[0]), valores: entries.map(e => e[1]) };
+}
+
+// ─── Stock valorizado ─────────────────────────────────────────────────
+
+function calcStockValorizado(stData, cData) {
+  const costosFallback = getCostosDesdeCompras(cData);
+  const { headers, rows } = stData;
+  const cProd   = colAny(headers, 'PRODUCTO');
+  const cCant   = colAny(headers, 'CANTIDAD','STOCK','UNIDADES');
+  // El sheet STOCK puede tener PRECIO COSTO o VALOR STOCK directamente
+  const cPrecio = colAny(headers, 'PRECIO COSTO','PRECIO DE COSTO','COSTO','PRECIO');
+  const cValor  = colAny(headers, 'VALOR STOCK','VALOR TOTAL','SUBTOTAL');
+
+  let total = 0;
+  for (const r of rows) {
+    const cant = Number(r[cCant] || 0);
+    if (cant === 0) continue;
+    // Prioridad: VALOR STOCK (ya computado) > cant × PRECIO COSTO > cant × costo desde COMPRAS
+    if (cValor >= 0 && Number(r[cValor] || 0) > 0) {
+      total += Number(r[cValor] || 0);
+    } else if (cPrecio >= 0 && Number(r[cPrecio] || 0) > 0) {
+      total += cant * Number(r[cPrecio] || 0);
+    } else {
+      const prod = String(r[cProd] || '').trim().toUpperCase();
+      total += cant * (costosFallback[prod] || 0);
+    }
+  }
+  return total;
+}
+
+// ─── Inversión desde la planilla ─────────────────────────────────────
+
+// Listar todas las pestañas de la planilla (útil para diagnosticar)
+function listSheets() {
+  const ss     = SpreadsheetApp.openById(SS_ID);
+  const sheets = ss.getSheets().map(s => s.getName());
+  return { ok: true, sheets };
+}
+
+function getInversionData(ss) {
+  // Intentar todos los nombres posibles de la pestaña de inversión
+  const nombres = [
+    'INVERSIÓN','INVERSION','INVERSIÓN INICIAL','INVERSION INICIAL',
+    'INVERSIONES','CAPITAL','APORTES','SOCIAS','INVERSION INICIAL '
+  ];
+  let invSheet = null;
+
+  // Primero intentar nombre exacto
+  for (const n of nombres) { invSheet = ss.getSheetByName(n); if (invSheet) break; }
+
+  // Si no, buscar cualquier pestaña cuyo nombre contenga "INVERS" o "CAPITAL"
+  if (!invSheet) {
+    for (const s of ss.getSheets()) {
+      const sn = s.getName().toUpperCase().replace(/[^A-Z]/g,'');
+      if (sn.includes('INVERS') || sn.includes('CAPITAL') || sn.includes('APORTE') || sn.includes('SOCIA')) {
+        invSheet = s; break;
+      }
+    }
+  }
+
+  if (invSheet) {
+    const data = sheetData(ss, invSheet.getName());
+    const { headers, rows } = data;
+    const cConc  = colAny(headers, 'CONCEPTO','NOMBRE','SOCIA','DESCRIPCION');
+    const cMonto = colAny(headers, 'MONTO','TOTAL','IMPORTE');
+
+    const map = {};
+    for (const r of rows) {
+      const nombre = String(r[cConc] || '').trim();
+      const monto  = Number(r[cMonto] || 0);
+      if (!nombre || monto === 0) continue;
+      map[nombre] = (map[nombre] || 0) + monto;
+    }
+
+    if (Object.keys(map).length > 0) {
+      const socias = Object.entries(map).map(([nombre, monto], i) => ({
+        nombre, monto, color: COLORES_SOCIAS[i % COLORES_SOCIAS.length]
+      }));
+      return { socias, total: socias.reduce((s, x) => s + x.monto, 0) };
+    }
+  }
+
+  // Fallback sin Amara (corregido)
+  const fallback = [
+    { nombre: 'Luana', monto: 813503, color: '#7A5C42' },
+    { nombre: 'Kiara', monto: 292891, color: '#C49A6C' }
+  ];
+  return { socias: fallback, total: fallback.reduce((s, x) => s + x.monto, 0) };
+}
+
+// ─── Catálogo de stock para dropdowns cascading ───────────────────────
+
+function buildCatalogoStock(stData) {
+  const { headers, rows } = stData;
+  const cols = {
+    marca:    colAny(headers, 'PROVEEDOR','MARCA'),
+    producto: colAny(headers, 'PRODUCTO'),
+    color:    colAny(headers, 'COLOR'),
+    talle:    colAny(headers, 'TALLE'),
+    cantidad: colAny(headers, 'CANTIDAD','STOCK'),
+    categoria: colAny(headers, 'CATEGORIA','CATEGORÍA','TIPO'),
+    codigo:   colAny(headers, 'CODIGO','CÓDIGO')
+  };
+
+  // Devolver lista plana; el frontend agrupa según necesidad
+  return rows
+    .filter(r => r[cols.producto])
+    .map(r => ({
+      marca:    String(r[cols.marca]    || '').trim(),
+      producto: String(r[cols.producto] || '').trim(),
+      color:    String(r[cols.color]    || '').trim(),
+      talle:    String(r[cols.talle]    || '').trim(),
+      cantidad: Number(r[cols.cantidad] || 0),
+      categoria: String(r[cols.categoria] || '').trim(),
+      codigo:   String(r[cols.codigo]   || '').trim()
+    }));
+}
+
+// ─── Stock tabla completa ─────────────────────────────────────────────
+
+function buildStockTabla(stData) {
+  const { headers, rows } = stData;
+  const cols = {
+    codigo:   colAny(headers, 'CODIGO','CÓDIGO'),
+    marca:    colAny(headers, 'PROVEEDOR','MARCA'),
+    producto: colAny(headers, 'PRODUCTO'),
+    color:    colAny(headers, 'COLOR'),
+    talle:    colAny(headers, 'TALLE'),
+    cantidad: colAny(headers, 'CANTIDAD','STOCK'),
+    categoria: colAny(headers, 'CATEGORIA','CATEGORÍA','TIPO')
+  };
+  return rows
+    .map(r => ({
+      codigo:    String(r[cols.codigo]   || ''),
+      marca:     String(r[cols.marca]    || ''),
+      producto:  String(r[cols.producto] || ''),
+      color:     String(r[cols.color]    || ''),
+      talle:     String(r[cols.talle]    || ''),
+      cantidad:  Number(r[cols.cantidad] || 0),
+      categoria: String(r[cols.categoria] || '')
+    }))
+    .filter(x => x.producto);
+}
+
+// ─── Últimas ventas ───────────────────────────────────────────────────
+
+function buildUltimasVentas(vData, n) {
+  const { headers, rows } = vData;
+  const cols = {
+    fecha:    colAny(headers, 'FECHA'),
+    producto: colAny(headers, 'PRODUCTO'),
+    cantidad: colAny(headers, 'CANTIDAD'),
+    monto:    colAny(headers, 'VALOR VENTA','MONTO','TOTAL','SUBTOTAL','IMPORTE','PRECIO VENTA','PRECIO DE VENTA')
+  };
+  const withDate = rows.filter(r => parseDate(r[cols.fecha]));
+  withDate.sort((a, b) => (parseDate(b[cols.fecha]) || 0) - (parseDate(a[cols.fecha]) || 0));
+  return withDate.slice(0, n).map(r => ({
+    fecha:    formatDate(parseDate(r[cols.fecha])),
+    producto: String(r[cols.producto] || ''),
+    cantidad: Number(r[cols.cantidad] || 0),
+    monto:    Number(r[cols.monto]    || 0)
+  }));
+}
+
+function formatDate(d) {
+  if (!d) return '';
+  return d.toLocaleDateString('es-AR', {
+    day: '2-digit', month: '2-digit', year: 'numeric',
+    timeZone: 'America/Argentina/Buenos_Aires'
+  });
+}
+
+// ─── Registrar Compra ─────────────────────────────────────────────────
+
+function registrarCompra(data) {
+  const ss     = SpreadsheetApp.openById(SS_ID);
+  const codigo = data.codigo || generarCodigo(data);
+
+  appendToSheet(ss, SHEET_COMPRAS, {
+    'FECHA':          data.fecha || today(),
+    'PROVEEDOR':      data.marca || '',
+    'MARCA':          data.marca || '',
+    'PRODUCTO':       data.producto || '',
+    'CODIGO':         codigo,
+    'COLOR':          data.color || '',
+    'TALLE':          data.talle || '',
+    'CANTIDAD':       Number(data.cantidad || 0),
+    'PRECIO COSTO':   Number(data.precioCosto || 0),
+    'PRECIO DE COSTO': Number(data.precioCosto || 0),
+    'SUBTOTAL':       Number(data.cantidad || 0) * Number(data.precioCosto || 0)
+  });
+
+  updateStock(ss, data, 'compra');
+  return { ok: true, msg: 'Compra registrada', codigo };
+}
+
+// ─── Registrar Venta ──────────────────────────────────────────────────
+
+function registrarVenta(data) {
+  const ss   = SpreadsheetApp.openById(SS_ID);
+  const cant = Number(data.cantidad || 1);
+  const prod = String(data.producto || '').trim();
+  const pv   = Number(data.precioVenta || 0);
+
+  // Costo FIFO automático
+  const fifo = calcFIFOParaProducto(ss, prod, cant);
+  const costoFIFO = fifo.precio;
+
+  appendToSheet(ss, SHEET_VENTAS, {
+    'FECHA':           data.fecha || today(),
+    'PROVEEDOR':       data.marca || '',
+    'PRODUCTO':        prod,
+    'VALOR VENTA':     cant * pv,   // nombre real de la columna en el sheet
+    'MONTO':           cant * pv,
+    'TOTAL':           cant * pv,
+    'PRECIO VENTA':    pv,
+    'PRECIO DE VENTA': pv,
+    'COSTO':           costoFIFO,
+    'PRECIO COSTO':    costoFIFO,
+    'PRECIO DE COSTO': costoFIFO,
+    'GANANCIA':        (cant * pv) - costoFIFO,
+    'CANTIDAD':        cant,
+    'COLOR':           data.color  || '',
+    'TALLE':           data.talle  || '',
+    'CODIGO':          data.codigo || '',
+    'TIPO':            data.tipo   || ''
+  });
+
+  updateStock(ss, data, 'venta');
+  return { ok: true, msg: 'Venta registrada', costoFIFO };
+}
+
+// ─── Registrar Gasto ──────────────────────────────────────────────────
+
+function registrarGasto(data) {
+  const ss = SpreadsheetApp.openById(SS_ID);
+  appendToSheet(ss, SHEET_GASTOS, {
+    'FECHA':       data.fecha  || today(),
+    'DESCRIPCION': data.desc   || '',
+    'TIPO':        data.tipo   || '',
+    'CATEGORIA':   data.tipo   || '',
+    'CATEGORÍA':   data.tipo   || '',
+    'MONTO':       Number(data.monto || 0)
+  });
+  return { ok: true, msg: 'Gasto registrado' };
+}
+
+// ─── Escritura en hoja ────────────────────────────────────────────────
+
+function appendToSheet(ss, sheetName, valueMap) {
+  const data  = sheetData(ss, sheetName);
+  const sheet = ss.getSheetByName(sheetName);
+  if (!sheet) { Logger.log('Hoja no encontrada: ' + sheetName); return; }
+
+  const { headers } = data;
+  const norm = s => String(s).trim().toUpperCase().replace(/\s+/g, ' ');
+
+  if (!headers.length) {
+    const keys = Object.keys(valueMap).map(k => k.toUpperCase());
+    sheet.appendRow(keys);
+    sheet.appendRow(keys.map(k => {
+      const match = Object.keys(valueMap).find(ok => norm(ok) === norm(k));
+      return match !== undefined ? valueMap[match] : '';
+    }));
+    return;
+  }
+
+  const newRow = headers.map(h => {
+    for (const key of Object.keys(valueMap)) {
+      if (norm(key) === norm(h)) return valueMap[key];
+    }
+    return '';
+  });
+  sheet.appendRow(newRow);
+}
+
+function updateStock(ss, data, operation) {
+  const stData = sheetData(ss, SHEET_STOCK);
+  const sheet  = ss.getSheetByName(SHEET_STOCK);
+  if (!sheet) return;
+
+  const { headers, rows } = stData;
+  const cProd  = colAny(headers, 'PRODUCTO');
+  const cColor = colAny(headers, 'COLOR');
+  const cTalle = colAny(headers, 'TALLE');
+  const cCant  = colAny(headers, 'CANTIDAD','STOCK');
+
+  const bProd  = String(data.producto || '').trim().toUpperCase();
+  const bColor = String(data.color    || '').trim().toUpperCase();
+  const bTalle = String(data.talle    || '').trim().toUpperCase();
+  const delta  = Number(data.cantidad || 0) * (operation === 'venta' ? -1 : 1);
+
+  // Encontrar fila de encabezados en la hoja real
+  const allVals = sheet.getDataRange().getValues();
+  let headerRowNum = 1;
+  for (let i = 0; i < Math.min(5, allVals.length); i++) {
+    const upper = allVals[i].map(c => String(c).trim().toUpperCase());
+    if (HEADER_KEYWORDS.some(k => upper.includes(k))) { headerRowNum = i + 1; break; }
+  }
+
+  for (let i = 0; i < rows.length; i++) {
+    const r      = rows[i];
+    const rProd  = String(r[cProd]  || '').trim().toUpperCase();
+    const rColor = String(r[cColor] || '').trim().toUpperCase();
+    const rTalle = String(r[cTalle] || '').trim().toUpperCase();
+    const match  = rProd === bProd
+      && (!bColor || rColor === bColor)
+      && (!bTalle || rTalle === bTalle);
+
+    if (match) {
+      const sheetRow = headerRowNum + 1 + i;
+      const colNum   = cCant + 1;
+      const current  = Number(sheet.getRange(sheetRow, colNum).getValue() || 0);
+      sheet.getRange(sheetRow, colNum).setValue(Math.max(0, current + delta));
+      return;
+    }
+  }
+
+  // Producto no encontrado: agregar fila solo en compra
+  if (operation === 'compra') {
+    appendToSheet(ss, SHEET_STOCK, {
+      'PROVEEDOR': data.marca     || '',
+      'MARCA':     data.marca     || '',
+      'PRODUCTO':  data.producto  || '',
+      'CODIGO':    data.codigo    || generarCodigo(data),
+      'COLOR':     data.color     || '',
+      'TALLE':     data.talle     || '',
+      'CANTIDAD':  Number(data.cantidad || 0),
+      'CATEGORIA': data.categoria || '',
+      'CATEGORÍA': data.categoria || ''
+    });
+  }
+}
+
+// ─── Código automático ────────────────────────────────────────────────
+
+const TIPO_ABR  = {
+  REMERA:'RE',BUZO:'BU',CAMPERA:'CA',PANTALON:'PA',SHORT:'SH',CALZA:'CL',
+  MEDIAS:'ME',ZAPATILLA:'ZA',CAMISETA:'CM',CONJUNTO:'CO',CHALECO:'CH',MUSCULOSA:'MU'
+};
+const COLOR_ABR = {
+  NEGRO:'NE',BLANCO:'BL',ROJO:'RO',AZUL:'AZ',VERDE:'VE',AMARILLO:'AM',
+  GRIS:'GR',ROSA:'RS',NARANJA:'NA',VIOLETA:'VI',CELESTE:'CE',MARRON:'MR',BEIGE:'BE'
+};
+
+function generarCodigo(data) {
+  const m  = String(data.marca    || '').toUpperCase().replace(/\s+/g,'').slice(0,4).padEnd(4,'X');
+  const tk = String(data.tipo     || data.categoria || '').toUpperCase();
+  const t  = TIPO_ABR[tk] || tk.slice(0,2).padEnd(2,'X');
+  const ck = String(data.color    || '').toUpperCase();
+  const c  = COLOR_ABR[ck] || ck.slice(0,2).padEnd(2,'X');
+  const z  = String(data.talle    || '').toUpperCase().slice(0,1) || 'X';
+  const p  = String(data.producto || '').toUpperCase().replace(/\s+/g,'').slice(0,5).padEnd(5,'X');
   return `${m}-${t}-${c}-${z}-${p}`;
 }
 
-function actualizarCodigoN() {
-  const cod = genCodigo($('cn-marca').value,$('cn-cat').value,$('cn-color').value,$('cn-talle').value,$('cn-prod').value);
-  $('cn-codigo').textContent = cod;
-}
+// ─── Setup ────────────────────────────────────────────────────────────
 
-// ── Navegación ─────────────────────────────────────────────────────────
-function showPanel(name, btn) {
-  document.querySelectorAll('.panel').forEach(p => p.classList.remove('active'));
-  $('panel-' + name).classList.add('active');
-  document.querySelectorAll('nav button').forEach(b => b.classList.remove('active'));
-  if (btn) btn.classList.add('active');
-
-  // Inicializar panel Venta con lista
-  if (name === 'venta' && gData) renderListaVenta('');
-}
-
-function showSubtab(name, btn) {
-  $('gasto-costo').style.display      = name === 'costo'     ? '' : 'none';
-  $('gasto-inversion').style.display  = name === 'inversion' ? '' : 'none';
-  document.querySelectorAll('.subtab').forEach(b => b.classList.remove('active'));
-  btn.classList.add('active');
-  if (name === 'inversion' && gData) renderInversionPanel(gData.inversion);
-}
-
-// ── API ────────────────────────────────────────────────────────────────
-async function apiGet(params) {
-  const r = await fetch(API_URL + '?' + new URLSearchParams(params).toString());
-  return r.json();
-}
-async function apiPost(body) {
-  const r = await fetch(API_URL, {method:'POST', body:JSON.stringify(body), headers:{'Content-Type':'text/plain'}});
-  return r.json();
-}
-
-// ── Helpers ────────────────────────────────────────────────────────────
-function $(id) { return document.getElementById(id); }
-function pesos(n) {
-  if (n === null || n === undefined) return '—';
-  return '$' + Number(n).toLocaleString('es-AR',{minimumFractionDigits:0,maximumFractionDigits:0});
-}
-let toastT;
-function toast(msg, type) {
-  const el = $('toast');
-  el.textContent = msg;
-  el.className = 'show' + (type ? ' '+type : '');
-  clearTimeout(toastT);
-  toastT = setTimeout(() => el.className = '', 3200);
-}
-function todayISO() { return new Date().toLocaleDateString('sv'); }
-function setDates() {
-  const d = todayISO();
-  ['cn-fecha','ce-fecha','v-fecha','g-fecha','gi-fecha'].forEach(id => {
-    const el = $(id); if (el && !el.value) el.value = d;
-  });
-}
-function unique(arr) { return [...new Set(arr.filter(Boolean))].sort(); }
-
-// ── Dashboard ──────────────────────────────────────────────────────────
-function renderDashboard(data) {
-  const k = data.kpis;
-
-  $('kv').textContent = pesos(k.ingresosMes);
-  $('ku').textContent = (k.unidadesMes||0) + ' unidades';
-  $('ksv').textContent = pesos(data.stockValorizado);
-  $('ki').textContent  = pesos(data.inversion.total);
-
-  const gEl = $('kg');
-  gEl.textContent = pesos(k.gananciaMes);
-  gEl.className   = 'kpi-v ' + (k.gananciaMes >= 0 ? 'pos' : 'neg');
-
-  // Charts
-  mkBar('chVentas',   data.tendencia.labels,    data.tendencia.valores,   '#7A5C42', 'Ingresos');
-  mkBar('chGanancia', data.gananciaNeta.labels,  data.gananciaNeta.valores,'#4CAF50', 'Ganancia neta', true);
-  mkDoughnut('chStock', data.stockMarca.labels, data.stockMarca.valores,
-    ['#7A5C42','#C49A6C','#E8C99A','#5C3D2E','#A07850','#D4B896','#B8956E']);
-  mkDoughnut('chInv',
-    data.inversion.socias.map(s=>s.nombre),
-    data.inversion.socias.map(s=>s.monto),
-    data.inversion.socias.map(s=>s.color));
-  mkStackedBar('chCostos', data.costosPorTipo);
-
-  // Últimas ventas
-  const tbody = $('tbl-uv');
-  tbody.innerHTML = '';
-  const uv = data.ultimasVentas || [];
-  if (!uv.length) {
-    tbody.innerHTML = '<tr><td colspan="4" style="text-align:center;color:var(--gray);padding:16px">Sin ventas registradas</td></tr>';
-    return;
+function setupSheets() {
+  const ss = SpreadsheetApp.openById(SS_ID);
+  if (!ss.getSheetByName(SHEET_COMPRAS)) {
+    const sh = ss.insertSheet(SHEET_COMPRAS);
+    sh.appendRow(['FECHA','PROVEEDOR','MARCA','PRODUCTO','CODIGO','COLOR','TALLE','CANTIDAD','PRECIO COSTO','SUBTOTAL']);
+    SpreadsheetApp.flush();
   }
-  uv.forEach(v => {
-    const tr = document.createElement('tr');
-    tr.innerHTML = `<td>${v.fecha}</td><td>${v.producto}</td><td class="num">${v.cantidad}</td><td class="num">${pesos(v.monto)}</td>`;
-    tbody.appendChild(tr);
-  });
+  Logger.log('setupSheets OK');
 }
 
-// ── Stock panel ────────────────────────────────────────────────────────
-function renderStockPanel(rows) {
-  stockRows = rows || [];
-  filtrarStock();
-}
+function addCodigoToStock() {
+  const ss    = SpreadsheetApp.openById(SS_ID);
+  const sheet = ss.getSheetByName(SHEET_STOCK);
+  if (!sheet) { Logger.log('No existe STOCK'); return; }
 
-function filtrarStock() {
-  const q = ($('filtroStock')?.value || '').toLowerCase();
-  const filtered = stockRows.filter(r =>
-    !q || [r.producto,r.marca,r.codigo,r.categoria].some(f => (f||'').toLowerCase().includes(q))
-  );
-  const tbody = $('tbl-stock');
-  tbody.innerHTML = '';
-  filtered.forEach(r => {
-    let badge;
-    if (r.cantidad <= 0)      badge = `<span class="badge badge-no">Sin stock</span>`;
-    else if (r.cantidad <= 3) badge = `<span class="badge badge-low">${r.cantidad}</span>`;
-    else                       badge = `<span class="badge badge-ok">${r.cantidad}</span>`;
-    const tr = document.createElement('tr');
-    tr.innerHTML = `
-      <td><code style="font-size:.76rem">${r.codigo||'—'}</code></td>
-      <td>${r.marca||'—'}</td><td>${r.producto||'—'}</td>
-      <td>${r.color||'—'}</td><td>${r.talle||'—'}</td>
-      <td class="num">${badge}</td><td>${r.categoria||'—'}</td>`;
-    tbody.appendChild(tr);
-  });
-  $('stk-cnt').textContent = filtered.length + ' items';
-  if (!filtered.length)
-    tbody.innerHTML = '<tr><td colspan="7" style="text-align:center;color:var(--gray);padding:16px">Sin resultados</td></tr>';
-}
+  const { headers, rows } = sheetData(ss, SHEET_STOCK);
+  if (colAny(headers, 'CODIGO','CÓDIGO') >= 0) { Logger.log('CODIGO ya existe'); return; }
 
-// ── Compra — modo nuevo/existente ──────────────────────────────────────
-function setCompraMode(mode, btn) {
-  $('compra-nuevo').style.display     = mode === 'nuevo'     ? '' : 'none';
-  $('compra-existente').style.display = mode === 'existente' ? '' : 'none';
-  document.querySelectorAll('.toggle-btn').forEach(b => b.classList.remove('active'));
-  btn.classList.add('active');
-
-  if (mode === 'existente' && gData) poblarCascading();
-}
-
-function poblarCascading() {
-  if (!gData || !gData.catalogoStock) return;
-  const marcas = unique(gData.catalogoStock.map(r => r.marca));
-  const sel = $('ce-marca');
-  sel.innerHTML = '<option value="">— Seleccionar —</option>';
-  marcas.forEach(m => sel.add(new Option(m, m)));
-  $('ce-prod').innerHTML  = '<option value="">— Primero elegí marca —</option>';
-  $('ce-color').innerHTML = '<option value="">—</option>';
-  $('ce-talle').innerHTML = '<option value="">—</option>';
-}
-
-function onCeMarcaChange() {
-  const marca = $('ce-marca').value;
-  const items = (gData.catalogoStock || []).filter(r => r.marca === marca);
-  const prods = unique(items.map(r => r.producto));
-  const sel = $('ce-prod');
-  sel.innerHTML = '<option value="">— Seleccionar —</option>';
-  prods.forEach(p => sel.add(new Option(p, p)));
-  $('ce-color').innerHTML = '<option value="">—</option>';
-  $('ce-talle').innerHTML = '<option value="">—</option>';
-  $('ce-cat').value = '';
-  $('ce-codigo').textContent = 'Elegí un producto';
-}
-
-function onCeProdChange() {
-  const marca = $('ce-marca').value;
-  const prod  = $('ce-prod').value;
-  const items = (gData.catalogoStock || []).filter(r => r.marca === marca && r.producto === prod);
-  const colores = unique(items.map(r => r.color));
-  const sel = $('ce-color');
-  sel.innerHTML = '<option value="">—</option>';
-  colores.forEach(c => sel.add(new Option(c, c)));
-  $('ce-talle').innerHTML = '<option value="">—</option>';
-  // Si hay un solo color, seleccionarlo automáticamente
-  if (colores.length === 1) {
-    sel.value = colores[0];
-    onCeColorChange();
-  }
-}
-
-function onCeColorChange() {
-  const marca  = $('ce-marca').value;
-  const prod   = $('ce-prod').value;
-  const color  = $('ce-color').value;
-  const items  = (gData.catalogoStock || []).filter(r => r.marca === marca && r.producto === prod && r.color === color);
-  const talles = unique(items.map(r => r.talle));
-  const sel = $('ce-talle');
-  sel.innerHTML = '<option value="">—</option>';
-  talles.forEach(t => sel.add(new Option(t, t)));
-  if (talles.length === 1) { sel.value = talles[0]; onCeTalleChange(); }
-}
-
-function onCeTalleChange() {
-  const marca  = $('ce-marca').value;
-  const prod   = $('ce-prod').value;
-  const color  = $('ce-color').value;
-  const talle  = $('ce-talle').value;
-  const item   = (gData.catalogoStock || []).find(
-    r => r.marca === marca && r.producto === prod && r.color === color && r.talle === talle
-  );
-  if (item) {
-    $('ce-cat').value      = item.categoria;
-    $('ce-codigo').textContent = item.codigo || genCodigo(marca,'',color,talle,prod);
-  }
-}
-
-// ── Compra submit ──────────────────────────────────────────────────────
-async function submitCompra(e, mode) {
-  e.preventDefault();
-  const stEl  = $(mode === 'nuevo' ? 'compra-n-st' : 'compra-e-st');
-  const btn   = e.target.querySelector('button[type=submit]');
-  btn.disabled = true;
-  stEl.textContent = 'Guardando...';
-
-  let payload;
-  if (mode === 'nuevo') {
-    const f = $('form-compra-n');
-    payload = {
-      action:'compra', fecha:$('cn-fecha').value,
-      marca:$('cn-marca').value, categoria:$('cn-cat').value,
-      producto:$('cn-prod').value, color:$('cn-color').value,
-      talle:$('cn-talle').value, cantidad:$('cn-cant').value,
-      precioCosto:$('cn-precio').value,
-      codigo: genCodigo($('cn-marca').value,$('cn-cat').value,$('cn-color').value,$('cn-talle').value,$('cn-prod').value)
-    };
-  } else {
-    payload = {
-      action:'compra', fecha:$('ce-fecha').value,
-      marca:$('ce-marca').value, categoria:$('ce-cat').value,
-      producto:$('ce-prod').value, color:$('ce-color').value,
-      talle:$('ce-talle').value, cantidad:$('ce-cant').value,
-      precioCosto:$('ce-precio').value,
-      codigo:$('ce-codigo').textContent
-    };
+  const allVals = sheet.getDataRange().getValues();
+  let headerRow = 1;
+  for (let i = 0; i < Math.min(5, allVals.length); i++) {
+    const upper = allVals[i].map(c => String(c).trim().toUpperCase());
+    if (HEADER_KEYWORDS.some(k => upper.includes(k))) { headerRow = i + 1; break; }
   }
 
-  const res = await apiPost(payload);
-  btn.disabled = false;
-  if (res.ok) {
-    stEl.textContent = '';
-    toast('Compra registrada', 'ok');
-    e.target.reset();
-    if (mode === 'nuevo') {
-      $('cn-codigo').textContent = 'Completá los campos para generar';
-    } else {
-      $('ce-codigo').textContent = 'Elegí un producto';
-    }
-    setDates();
-    gData = null;
-  } else {
-    stEl.textContent = res.error || 'Error';
-    toast('Error: ' + res.error, 'err');
+  sheet.insertColumnAfter(1);
+  sheet.getRange(headerRow, 2).setValue('CODIGO');
+
+  const offset = 1; // columna insertada desplaza todo +1
+  const cMarca = colAny(headers, 'PROVEEDOR','MARCA') + offset + 1;
+  const cProd  = colAny(headers, 'PRODUCTO') + offset + 1;
+  const cColor = colAny(headers, 'COLOR')    + offset + 1;
+  const cTalle = colAny(headers, 'TALLE')    + offset + 1;
+  const cTipo  = colAny(headers, 'CATEGORIA','CATEGORÍA','TIPO') + offset + 1;
+
+  for (let i = 0; i < rows.length; i++) {
+    const sheetRow = headerRow + 1 + i;
+    const r = sheet.getRange(sheetRow, 1, 1, sheet.getLastColumn()).getValues()[0];
+    sheet.getRange(sheetRow, 2).setValue(generarCodigo({
+      marca:    r[cMarca - 1] || '',
+      producto: r[cProd  - 1] || '',
+      color:    r[cColor - 1] || '',
+      talle:    r[cTalle - 1] || '',
+      tipo:     r[cTipo  - 1] || ''
+    }));
   }
+  Logger.log('CODIGO agregado: ' + rows.length + ' filas');
 }
 
-// ── Venta — selección forzada de producto ─────────────────────────────
-function renderListaVenta(q) {
-  if (!gData) return;
-  ventaRows = gData.stockTabla || [];
-  filtrarProductosVenta(q || '');
+function today() {
+  return Utilities.formatDate(new Date(), 'America/Argentina/Buenos_Aires', 'yyyy-MM-dd');
 }
-
-function filtrarProductosVenta(q) {
-  const ql = q.toLowerCase();
-  const filtered = ventaRows.filter(r =>
-    !ql || r.producto.toLowerCase().includes(ql) ||
-    r.marca.toLowerCase().includes(ql) ||
-    r.color.toLowerCase().includes(ql)
-  );
-
-  const lista = $('v-lista');
-  lista.innerHTML = '';
-
-  filtered.forEach(item => {
-    const div = document.createElement('div');
-    div.className = 'prod-item';
-    const fifo = (gData.fichaCostos || {})[item.producto.toUpperCase()] || 0;
-    div.innerHTML = `
-      <span class="prod-badge">Stock: ${item.cantidad} | FIFO: ${pesos(fifo)}</span>
-      <div class="prod-name">${item.producto}</div>
-      <div class="prod-meta">${item.marca} · ${item.color} · Talle ${item.talle}</div>`;
-    div.onclick = () => seleccionarProductoVenta(item, fifo);
-    lista.appendChild(div);
-  });
-
-  if (!filtered.length) {
-    lista.innerHTML = '<div style="padding:20px;text-align:center;color:var(--gray);font-size:.85rem">Sin resultados</div>';
-  }
-}
-
-function seleccionarProductoVenta(item, costFifo) {
-  ventaSel = item;
-
-  // Rellenar campos ocultos
-  $('v-prod').value   = item.producto;
-  $('v-marca').value  = item.marca;
-  $('v-color').value  = item.color;
-  $('v-talle').value  = item.talle;
-  $('v-codigo').value = item.codigo;
-  $('v-costo-fifo').value = costFifo;
-
-  // Info del producto seleccionado
-  $('v-sel-info').innerHTML = `
-    <strong>${item.producto}</strong> &nbsp;·&nbsp; ${item.marca} &nbsp;·&nbsp; ${item.color} &nbsp;·&nbsp; Talle ${item.talle}<br>
-    <span style="font-size:.78rem;color:var(--gray)">Stock disponible: <strong style="color:var(--brown2)">${item.cantidad}</strong> &nbsp;·&nbsp; Costo FIFO unitario: <strong style="color:var(--brown2)">${pesos(costFifo)}</strong></span>`;
-
-  // Mostrar formulario, ocultar lista
-  $('v-form-card').style.display = '';
-  $('v-buscar').closest('.card').style.display = 'none';
-
-  setDates();
-}
-
-function cancelarVenta() {
-  ventaSel = null;
-  $('v-form-card').style.display = 'none';
-  $('v-buscar').closest('.card').style.display = '';
-  $('v-buscar').value = '';
-  $('form-venta').reset();
-  renderListaVenta('');
-}
-
-function actualizarCostoVenta() {
-  const cant  = Number($('v-cantidad').value || 1);
-  const precio = Number($('v-precio')?.value || 0);
-  $('v-total').value = cant * precio;
-}
-
-document.addEventListener('input', e => {
-  if (e.target.id === 'v-precio') actualizarCostoVenta();
-});
-
-async function submitVenta(e) {
-  e.preventDefault();
-  if (!ventaSel) { toast('Elegí un producto primero', 'err'); return; }
-  const btn = e.target.querySelector('button[type=submit]');
-  const st  = $('venta-st');
-  btn.disabled = true;
-  st.textContent = 'Guardando...';
-
-  const res = await apiPost({
-    action:'venta',
-    fecha:    $('v-fecha').value,
-    producto: $('v-prod').value,
-    marca:    $('v-marca').value,
-    color:    $('v-color').value,
-    talle:    $('v-talle').value,
-    codigo:   $('v-codigo').value,
-    cantidad: $('v-cantidad').value,
-    precioVenta: $('v-precio').value
-  });
-
-  btn.disabled = false;
-  if (res.ok) {
-    st.textContent = '';
-    toast('Venta registrada', 'ok');
-    cancelarVenta();
-    gData = null;
-  } else {
-    st.textContent = res.error || 'Error';
-    toast('Error: ' + res.error, 'err');
-  }
-}
-
-// ── Gastos ─────────────────────────────────────────────────────────────
-async function submitGasto(e) {
-  e.preventDefault();
-  const btn = e.target.querySelector('button[type=submit]');
-  btn.disabled = true;
-  const res = await apiPost({
-    action:'gasto',
-    fecha: $('g-fecha').value,
-    tipo:  $('g-tipo').value,
-    desc:  $('g-desc').value,
-    monto: $('g-monto').value
-  });
-  btn.disabled = false;
-  if (res.ok) { toast('Gasto registrado','ok'); e.target.reset(); setDates(); gData=null; }
-  else toast('Error: '+res.error,'err');
-}
-
-// ── Inversión panel ────────────────────────────────────────────────────
-function renderInversionPanel(inv) {
-  if (!inv) return;
-  // Cards por socia
-  const cont = $('inv-cards');
-  if (cont) {
-    cont.innerHTML = '';
-    const total = inv.socias.reduce((s,x)=>s+x.monto,0);
-    inv.socias.forEach(s => {
-      const pct = total > 0 ? ((s.monto/total)*100).toFixed(1) : 0;
-      const d = document.createElement('div');
-      d.className = 'inv-card';
-      d.style.cssText = `background:${s.color}22;border:1px solid ${s.color}`;
-      d.innerHTML = `
-        <div style="font-size:.66rem;font-weight:700;color:${s.color};text-transform:uppercase;letter-spacing:.06em">${s.nombre}</div>
-        <div style="font-size:1.3rem;font-weight:800;color:var(--brown2);margin-top:4px">${pesos(s.monto)}</div>
-        <div style="font-size:.72rem;color:var(--gray);margin-top:2px">${pct}% del total</div>`;
-      cont.appendChild(d);
-    });
-  }
-  // Poblar dropdown de socias en formulario
-  const sociaSel = $('gi-socia');
-  if (sociaSel) {
-    sociaSel.innerHTML = '';
-    inv.socias.forEach(s => sociaSel.add(new Option(s.nombre, s.nombre)));
-  }
-  // Chart
-  mkDoughnut('chInvDet',
-    inv.socias.map(s=>s.nombre),
-    inv.socias.map(s=>s.monto),
-    inv.socias.map(s=>s.color));
-}
-
-async function submitInversion(e) {
-  e.preventDefault();
-  const btn  = e.target.querySelector('button[type=submit]');
-  const tipo = $('gi-tipo').value;
-  const socia = $('gi-socia').value;
-  btn.disabled = true;
-  const res = await apiPost({
-    action:'gasto',
-    fecha: $('gi-fecha').value,
-    tipo:  tipo + '-' + socia,
-    desc:  $('gi-desc').value,
-    monto: $('gi-monto').value
-  });
-  btn.disabled = false;
-  if (res.ok) { toast('Registrado','ok'); e.target.reset(); setDates(); gData=null; }
-  else toast('Error: '+res.error,'err');
-}
-
-// ── Charts ─────────────────────────────────────────────────────────────
-function mkBar(id, labels, values, color, label, allowNeg) {
-  if (charts[id]) charts[id].destroy();
-  const ctx = $(id); if (!ctx) return;
-  const COLORS = ['#7A5C42','#C49A6C'];
-  const bgs = values.map(v =>
-    allowNeg && v < 0 ? '#E5393580' : color + 'CC'
-  );
-  const borders = values.map(v =>
-    allowNeg && v < 0 ? '#E53935' : color
-  );
-  charts[id] = new Chart(ctx, {
-    type:'bar',
-    data:{ labels, datasets:[{ label, data:values, backgroundColor:bgs, borderColor:borders, borderWidth:1.5, borderRadius:6 }]},
-    options:{
-      responsive:true,
-      plugins:{
-        legend:{display:false},
-        tooltip:{callbacks:{label:c=>' $'+c.parsed.y.toLocaleString('es-AR')}}
-      },
-      scales:{
-        y:{beginAtZero:allowNeg?false:true, ticks:{callback:v=>'$'+(Math.abs(v)>=1000?(v/1000).toFixed(0)+'k':v),font:{size:10}}, grid:{color:'#EDE5D8'}},
-        x:{ticks:{font:{size:10}},grid:{display:false}}
-      }
-    }
-  });
-}
-
-function mkDoughnut(id, labels, values, colors) {
-  if (charts[id]) charts[id].destroy();
-  const ctx = $(id); if (!ctx) return;
-  charts[id] = new Chart(ctx, {
-    type:'doughnut',
-    data:{ labels, datasets:[{data:values, backgroundColor:colors, borderColor:'#fff', borderWidth:2, hoverOffset:8}]},
-    options:{
-      responsive:true, cutout:'60%',
-      plugins:{
-        legend:{position:'bottom',labels:{font:{size:10},padding:10,usePointStyle:true,pointStyleWidth:8}},
-        tooltip:{callbacks:{label:c=>{
-          const total=c.dataset.data.reduce((a,b)=>a+b,0);
-          const pct=total>0?((c.parsed/total)*100).toFixed(1):0;
-          return ` ${c.label}: $${c.parsed.toLocaleString('es-AR')} (${pct}%)`;
-        }}}
-      }
-    }
-  });
-}
-
-function mkStackedBar(id, costosData) {
-  if (charts[id]) charts[id].destroy();
-  const ctx = $(id); if (!ctx) return;
-  if (!costosData || !costosData.datasets || !costosData.datasets.length) {
-    charts[id] = null;
-    ctx.parentElement.querySelector('.card-t').insertAdjacentHTML('afterend','<p style="color:var(--gray);font-size:.82rem;padding:40px 0 0;text-align:center">Sin datos de gastos</p>');
-    return;
-  }
-  const PALETTE = ['#7A5C42','#C49A6C','#E8C99A','#5C3D2E','#A07850','#D4B896','#B8956E','#3D2A1E'];
-  charts[id] = new Chart(ctx, {
-    type:'bar',
-    data:{
-      labels: costosData.labels,
-      datasets: costosData.datasets.map((ds,i)=>({
-        label: ds.tipo,
-        data:  ds.valores,
-        backgroundColor: PALETTE[i%PALETTE.length]+'CC',
-        borderColor:     PALETTE[i%PALETTE.length],
-        borderWidth:1, borderRadius:4
-      }))
-    },
-    options:{
-      responsive:true,
-      scales:{
-        x:{stacked:true, ticks:{font:{size:10}}, grid:{display:false}},
-        y:{stacked:true, beginAtZero:true,
-           ticks:{callback:v=>'$'+(v>=1000?(v/1000).toFixed(0)+'k':v),font:{size:10}},
-           grid:{color:'#EDE5D8'}}
-      },
-      plugins:{
-        legend:{position:'bottom',labels:{font:{size:9},padding:8,usePointStyle:true,pointStyleWidth:7}},
-        tooltip:{callbacks:{label:c=>` ${c.dataset.label}: $${c.parsed.y.toLocaleString('es-AR')}`}}
-      }
-    }
-  });
-}
-
-// ── Debug ──────────────────────────────────────────────────────────────
-function logDebug(data) {
-  if (data._debug) {
-    console.group('AMARA Debug — Headers detectados');
-    Object.entries(data._debug).forEach(([k,v]) => console.log(k+':', v));
-    console.groupEnd();
-  }
-}
-
-// ── Init ───────────────────────────────────────────────────────────────
-async function init() {
-  setDates();
-  try {
-    const data = await apiGet({ action:'getAll' });
-    gData = data;
-    logDebug(data);
-
-    if (!data.ok) {
-      toast('Error: ' + (data.error || 'respuesta invalida'), 'err');
-      console.error(data);
-    } else {
-      renderDashboard(data);
-      renderStockPanel(data.stockTabla);
-      // Pre-poblar cascading de compra para cuando el usuario abra ese panel
-      if (data.catalogoStock) {
-        // poblar marcas existentes en compra existente
-        const marcas = [...new Set(data.catalogoStock.map(r=>r.marca).filter(Boolean))].sort();
-        const sel = $('ce-marca');
-        sel.innerHTML = '<option value="">— Seleccionar —</option>';
-        marcas.forEach(m => sel.add(new Option(m,m)));
-      }
-    }
-  } catch(err) {
-    toast('No se pudo conectar con la API', 'err');
-    console.error(err);
-  } finally {
-    $('loader').style.display = 'none';
-  }
-}
-
-init();
-</script>
-</body>
-</html>
