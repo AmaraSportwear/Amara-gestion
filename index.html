@@ -2,886 +2,905 @@
 <html lang="es">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>AMARA — Gestión</title>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
 <style>
-/* ── Variables ── */
-:root{
-  --p:#A07150;--pl:#C49A6C;--pll:#E8D5C4;--pbg:#FBF3EC;
-  --dark:#3D2B1F;--w:#fff;--gray:#888;--gray2:#ccc;
-  --green:#27AE60;--red:#C0392B;--blue:#2980B9;--orange:#E67E22;
-  --r:7px;--sh:0 1px 8px rgba(100,60,20,.13);
+/* ── Variables ─────────────────────────────────────── */
+:root {
+  --brown:    #7A5C42;
+  --brown2:   #5C3D2E;
+  --sand:     #C49A6C;
+  --cream:    #F5EFE6;
+  --white:    #FFFFFF;
+  --gray:     #8B8B8B;
+  --gray-lt:  #F0EBE3;
+  --border:   #D9CFBC;
+  --text:     #2D1F14;
+  --ok:       #4CAF50;
+  --err:      #E53935;
+  --font:     'Segoe UI', system-ui, sans-serif;
 }
-*{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent}
-html,body{height:100%;background:var(--pbg);font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;color:var(--dark);font-size:14px}
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+body { font-family: var(--font); background: var(--cream); color: var(--text); min-height: 100vh; }
+button { cursor: pointer; font-family: var(--font); }
+input, select { font-family: var(--font); }
 
-/* ── Views ── */
-.view{display:none;flex-direction:column;min-height:100vh}
-.view.active{display:flex}
-
-/* ── Header ── */
-.hdr{
-  background:var(--p);color:var(--w);
-  padding:10px 14px;
-  display:flex;align-items:center;gap:10px;
-  position:sticky;top:0;z-index:100;
-  box-shadow:0 2px 6px rgba(0,0,0,.25);
+/* ── Header ────────────────────────────────────────── */
+header {
+  background: var(--brown2);
+  padding: 0 20px;
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  height: 52px;
+  position: sticky;
+  top: 0;
+  z-index: 100;
+  box-shadow: 0 2px 8px rgba(0,0,0,.25);
 }
-.hdr-logo{font-size:18px;font-weight:800;letter-spacing:3px;flex:1}
-.hdr-sub{font-size:9px;letter-spacing:1px;opacity:.65}
-.hdr-nav{display:flex;gap:5px;flex-shrink:0}
-.nav-btn{
-  border:none;border-radius:5px;padding:6px 10px;
-  font-size:11px;font-weight:700;letter-spacing:.8px;cursor:pointer;
-  background:rgba(255,255,255,.18);color:var(--w);
-  transition:background .15s;white-space:nowrap;
+.logo-wrap { display: flex; align-items: center; gap: 10px; flex-shrink: 0; }
+.logo-circle {
+  width: 36px; height: 36px; border-radius: 50%;
+  background: var(--sand);
+  display: flex; align-items: center; justify-content: center;
+  font-weight: 900; font-size: .9rem; color: var(--brown2);
+  letter-spacing: -.02em;
 }
-.nav-btn:hover,.nav-btn.active{background:rgba(255,255,255,.35)}
-.nav-btn.v{background:rgba(39,174,96,.75)}
-.nav-btn.v:hover{background:rgba(39,174,96,.95)}
-.nav-btn.g{background:rgba(230,126,34,.75)}
-.nav-btn.g:hover{background:rgba(230,126,34,.95)}
-.nav-btn.s{background:rgba(41,128,185,.75)}
-.nav-btn.s:hover{background:rgba(41,128,185,.95)}
-
-/* ── Body scroll ── */
-.body{flex:1;overflow-y:auto;padding:14px}
-
-/* ── Month nav ── */
-.month-nav{display:flex;align-items:center;justify-content:center;gap:10px;margin-bottom:14px}
-.month-nav button{background:var(--p);border:none;color:var(--w);width:30px;height:30px;border-radius:50%;font-size:16px;cursor:pointer;line-height:1}
-.month-nav span{font-size:15px;font-weight:700;min-width:150px;text-align:center}
-
-/* ── KPI grid ── */
-.kpi-grid{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:12px}
-.kpi{background:var(--w);border-radius:var(--r);padding:11px 13px;box-shadow:var(--sh);border-left:3px solid var(--p)}
-.kpi.gr{border-color:var(--green)}.kpi.rd{border-color:var(--red)}.kpi.bl{border-color:var(--blue)}
-.kpi-lbl{font-size:9px;font-weight:700;letter-spacing:.9px;color:var(--gray);text-transform:uppercase;margin-bottom:3px}
-.kpi-val{font-size:19px;font-weight:800}
-.kpi-val.gr{color:var(--green)}.kpi-val.rd{color:var(--red)}
-.kpi-sub{font-size:10px;color:var(--gray);margin-top:1px}
-
-/* ── Investment card ── */
-.inv-card{background:var(--w);border-radius:var(--r);padding:13px;box-shadow:var(--sh);margin-bottom:12px}
-.inv-title{font-size:10px;font-weight:700;letter-spacing:.9px;color:var(--gray);text-transform:uppercase;margin-bottom:10px}
-.inv-body{display:flex;gap:14px;align-items:center}
-.pie-wrap{flex-shrink:0}
-.pie-legend{flex:1;display:flex;flex-direction:column;gap:6px}
-.leg-item{display:flex;align-items:center;gap:7px;font-size:12px}
-.leg-dot{width:10px;height:10px;border-radius:50%;flex-shrink:0}
-.leg-name{flex:1;font-weight:600}
-.leg-pct{font-size:11px;color:var(--gray);font-weight:700}
-.leg-amt{font-size:11px;color:var(--gray)}
-
-/* ── Recent ── */
-.sec-title{font-size:10px;font-weight:700;letter-spacing:.9px;color:var(--gray);text-transform:uppercase;margin-bottom:8px}
-.recent-list{display:flex;flex-direction:column;gap:6px}
-.r-item{background:var(--w);border-radius:var(--r);padding:9px 12px;display:flex;align-items:center;gap:8px;box-shadow:var(--sh)}
-.r-dot{width:7px;height:7px;border-radius:50%;background:var(--green);flex-shrink:0}
-.r-info{flex:1;min-width:0}
-.r-name{font-size:13px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.r-sub{font-size:10px;color:var(--gray)}
-.r-val{font-size:13px;font-weight:700;color:var(--green);white-space:nowrap}
-.empty{text-align:center;color:var(--gray);padding:20px 0;font-size:13px}
-
-/* ── Stock view ── */
-.stock-search{display:flex;gap:8px;margin-bottom:10px}
-.stock-search input{flex:1;padding:9px 11px;border:2px solid var(--pll);border-radius:var(--r);font-size:13px;outline:none;background:var(--w)}
-.stock-search input:focus{border-color:var(--p)}
-.stock-table-wrap{background:var(--w);border-radius:var(--r);box-shadow:var(--sh);overflow:hidden}
-.stock-table{width:100%;border-collapse:collapse;font-size:12px}
-.stock-table th{background:var(--p);color:var(--w);padding:8px 10px;text-align:left;font-size:10px;letter-spacing:.8px;white-space:nowrap}
-.stock-table td{padding:7px 10px;border-bottom:1px solid #f0ebe5;vertical-align:middle}
-.stock-table tr:last-child td{border-bottom:none}
-.stock-table tr:hover td{background:var(--pbg)}
-.qty-badge{display:inline-block;padding:2px 8px;border-radius:12px;font-weight:700;font-size:11px}
-.qty-ok{background:#E8F5E9;color:var(--green)}
-.qty-low{background:#FFF3E0;color:var(--orange)}
-.qty-zero{background:#FDECEA;color:var(--red)}
-.cod-chip{font-size:10px;background:var(--pbg);color:var(--p);padding:2px 7px;border-radius:4px;font-family:monospace}
-
-/* ── Forms ── */
-.form-inner{max-width:520px;margin:0 auto}
-.form-back{display:flex;align-items:center;gap:8px;margin-bottom:14px}
-.form-back button{background:var(--pll);border:none;color:var(--dark);width:30px;height:30px;border-radius:50%;font-size:16px;cursor:pointer;flex-shrink:0}
-.form-back h2{font-size:16px;font-weight:700;letter-spacing:1px}
-.form-back p{font-size:10px;color:var(--gray);letter-spacing:.5px}
-
-/* Search autocomplete */
-.ac-wrap{position:relative;margin-bottom:12px}
-.ac-wrap input{width:100%;padding:9px 11px 9px 32px;border:2px solid var(--pll);border-radius:var(--r);font-size:13px;outline:none;background:var(--w)}
-.ac-wrap input:focus{border-color:var(--p)}
-.ac-icon{position:absolute;left:10px;top:50%;transform:translateY(-50%);color:var(--gray);font-size:13px;pointer-events:none}
-.ac-drop{position:absolute;top:calc(100%+3px);left:0;right:0;background:var(--w);border-radius:var(--r);box-shadow:0 4px 16px rgba(0,0,0,.16);z-index:200;max-height:200px;overflow-y:auto;border:1px solid var(--pll);display:none}
-.ac-item{padding:8px 11px;cursor:pointer;border-bottom:1px solid var(--pbg);display:flex;gap:6px;align-items:flex-start}
-.ac-item:last-child{border-bottom:none}
-.ac-item:hover{background:var(--pbg)}
-.ac-main{font-size:12px;font-weight:600}
-.ac-sub{font-size:10px;color:var(--gray);flex:1}
-.ac-badge{font-size:10px;font-weight:700;background:var(--pbg);color:var(--p);padding:1px 6px;border-radius:10px;white-space:nowrap}
-.ac-badge.lo{background:#FDECEA;color:var(--red)}
-
-/* Field layout */
-.frow{display:grid;gap:8px;margin-bottom:8px}
-.fr2{grid-template-columns:1fr 1fr}
-.fr3{grid-template-columns:1fr 1fr 1fr}
-.fr4{grid-template-columns:1fr 1fr 1fr 1fr}
-.frow .fg label{display:block;font-size:9px;font-weight:700;letter-spacing:.7px;color:var(--gray);text-transform:uppercase;margin-bottom:3px}
-.frow .fg input,.frow .fg select{width:100%;padding:8px 9px;border:2px solid var(--pll);border-radius:var(--r);font-size:13px;background:var(--w);color:var(--dark);outline:none;appearance:none}
-.frow .fg input:focus,.frow .fg select:focus{border-color:var(--p)}
-.frow .fg input[readonly]{background:var(--pbg);color:var(--gray);cursor:default}
-.fg{display:flex;flex-direction:column}
-
-/* Auto-code row */
-.codigo-row{background:var(--pbg);border-radius:var(--r);padding:8px 10px;margin-bottom:8px;display:flex;align-items:center;gap:8px}
-.codigo-label{font-size:9px;font-weight:700;letter-spacing:.7px;color:var(--gray);text-transform:uppercase;white-space:nowrap}
-.codigo-val{font-family:monospace;font-size:13px;font-weight:700;color:var(--p);flex:1;padding:4px 8px;background:var(--w);border:2px solid var(--pll);border-radius:5px;outline:none}
-.codigo-val:focus{border-color:var(--p)}
-
-/* Toggle */
-.toggle-grp{display:flex;background:var(--pll);border-radius:var(--r);padding:3px;gap:3px;margin-bottom:12px}
-.tgl{flex:1;padding:8px 0;border:none;border-radius:5px;font-size:12px;font-weight:700;letter-spacing:.8px;cursor:pointer;background:transparent;color:var(--dark);transition:all .15s}
-.tgl.on{background:var(--p);color:var(--w)}
-
-/* Stock badge */
-.stk-badge{display:inline-block;font-size:11px;font-weight:700;padding:3px 9px;border-radius:12px;margin-bottom:8px}
-.stk-ok{background:#E8F5E9;color:var(--green)}
-.stk-lo{background:#FDECEA;color:var(--red)}
-
-/* Ganancia preview */
-.gan-box{background:var(--pbg);border-radius:var(--r);padding:10px 12px;margin-bottom:8px;display:none}
-.gan-box.show{display:block}
-.gan-row{display:flex;justify-content:space-between;font-size:12px;margin-bottom:3px}
-.gan-total{display:flex;justify-content:space-between;font-size:14px;font-weight:700;padding-top:6px;border-top:1px solid var(--pll);margin-top:3px}
-.gan-pos{color:var(--green)}.gan-neg{color:var(--red)}
-
-/* Submit */
-.btn-submit{width:100%;padding:13px;border:none;border-radius:var(--r);font-size:14px;font-weight:700;letter-spacing:1.5px;cursor:pointer;margin-top:10px;transition:background .15s}
-.btn-submit.c{background:var(--p);color:var(--w)}
-.btn-submit.c:hover{background:var(--pl)}
-.btn-submit.v{background:var(--green);color:var(--w)}
-.btn-submit.v:hover{background:#219a52}
-.btn-submit.g{background:var(--orange);color:var(--w)}
-.btn-submit.g:hover{background:#cf6d17}
-.btn-submit:disabled{background:var(--pll);cursor:not-allowed}
-
-/* Divider */
-hr.div{border:none;border-top:1px solid var(--pll);margin:10px 0}
-
-/* Toast */
-#toast{position:fixed;bottom:20px;left:50%;transform:translateX(-50%) translateY(70px);background:var(--dark);color:var(--w);padding:10px 20px;border-radius:20px;font-size:13px;font-weight:500;z-index:999;transition:transform .3s;white-space:nowrap}
-#toast.show{transform:translateX(-50%) translateY(0)}
-#toast.ok{background:var(--green)}
-#toast.err{background:var(--red)}
-
-/* Loading overlay */
-#loader{position:fixed;inset:0;background:rgba(251,243,236,.85);display:none;align-items:center;justify-content:center;z-index:500}
-#loader.on{display:flex}
-.loader-box{background:var(--w);padding:20px 28px;border-radius:var(--r);box-shadow:var(--sh);text-align:center}
-.spin{width:28px;height:28px;border:3px solid var(--pll);border-top-color:var(--p);border-radius:50%;animation:spin .7s linear infinite;margin:0 auto 8px}
-@keyframes spin{to{transform:rotate(360deg)}}
-.loader-box p{font-size:13px;color:var(--gray)}
-
-@media(max-width:400px){
-  .fr3{grid-template-columns:1fr 1fr}
-  .fr4{grid-template-columns:1fr 1fr}
+.logo-text { color: var(--white); font-size: 1.15rem; font-weight: 700; letter-spacing: .04em; }
+.logo-sub  { color: var(--sand); font-size: .68rem; font-weight: 400; display: block; margin-top: -2px; }
+nav {
+  display: flex; gap: 4px; margin-left: auto; align-items: center;
 }
+nav button {
+  background: transparent; border: none; color: rgba(255,255,255,.65);
+  font-size: .78rem; font-weight: 600; padding: 6px 12px;
+  border-radius: 6px; transition: all .15s; white-space: nowrap;
+}
+nav button:hover { background: rgba(255,255,255,.12); color: var(--white); }
+nav button.active { background: var(--sand); color: var(--brown2); }
+
+/* ── Main ─────────────────────────────────────────── */
+main { max-width: 1100px; margin: 0 auto; padding: 20px 16px 60px; }
+.panel { display: none; }
+.panel.active { display: block; }
+
+/* ── Cards ─────────────────────────────────────────── */
+.card {
+  background: var(--white); border: 1px solid var(--border);
+  border-radius: 12px; padding: 18px 20px; margin-bottom: 16px;
+}
+.card-title {
+  font-size: .68rem; font-weight: 700; color: var(--gray);
+  text-transform: uppercase; letter-spacing: .08em; margin-bottom: 12px;
+}
+
+/* ── KPI grid ──────────────────────────────────────── */
+.kpi-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
+  gap: 12px; margin-bottom: 16px;
+}
+.kpi {
+  background: var(--white); border: 1px solid var(--border);
+  border-radius: 12px; padding: 14px 16px;
+}
+.kpi-label { font-size: .67rem; font-weight: 700; color: var(--gray); text-transform: uppercase; letter-spacing: .07em; }
+.kpi-value { font-size: 1.5rem; font-weight: 800; color: var(--brown2); margin-top: 4px; line-height: 1; }
+.kpi-value.pos { color: var(--ok); }
+.kpi-value.neg { color: var(--err); }
+.kpi-sub   { font-size: .7rem; color: var(--gray); margin-top: 4px; }
+
+/* ── Chart grid ────────────────────────────────────── */
+.chart-grid {
+  display: grid;
+  grid-template-columns: 2fr 1fr 1fr;
+  gap: 14px; margin-bottom: 16px;
+}
+@media (max-width: 800px) { .chart-grid { grid-template-columns: 1fr; } }
+.chart-box {
+  background: var(--white); border: 1px solid var(--border);
+  border-radius: 12px; padding: 14px 16px;
+}
+.chart-box canvas { max-height: 230px; }
+
+/* ── Tables ────────────────────────────────────────── */
+.tbl-wrap { overflow-x: auto; }
+table { width: 100%; border-collapse: collapse; font-size: .82rem; }
+th, td { padding: 8px 10px; text-align: left; white-space: nowrap; }
+th { background: var(--gray-lt); font-weight: 700; font-size: .68rem; text-transform: uppercase; color: var(--gray); letter-spacing: .05em; border-bottom: 1px solid var(--border); }
+tr:nth-child(even) td { background: #FAF7F3; }
+td.num { text-align: right; font-variant-numeric: tabular-nums; }
+.badge { display: inline-block; font-size: .68rem; font-weight: 700; padding: 2px 8px; border-radius: 20px; background: var(--gray-lt); color: var(--gray); }
+.badge-ok  { background: #E8F5E9; color: #388E3C; }
+.badge-low { background: #FFF3E0; color: #E65100; }
+.badge-none { background: #FDECEA; color: #C62828; }
+
+/* ── Forms ─────────────────────────────────────────── */
+.form-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(158px, 1fr));
+  gap: 10px 14px;
+}
+.form-group { display: flex; flex-direction: column; gap: 4px; }
+.form-group label { font-size: .68rem; font-weight: 700; color: var(--gray); text-transform: uppercase; letter-spacing: .06em; }
+.form-group input,
+.form-group select {
+  border: 1px solid var(--border); border-radius: 7px; padding: 7px 10px;
+  font-size: .87rem; background: var(--cream); color: var(--text); transition: border .15s; width: 100%;
+}
+.form-group input:focus, .form-group select:focus { outline: none; border-color: var(--sand); background: var(--white); }
+.form-group.span2 { grid-column: span 2; }
+
+.btn { border: none; border-radius: 8px; padding: 9px 22px; font-size: .84rem; font-weight: 700; transition: all .15s; }
+.btn-primary { background: var(--brown); color: var(--white); }
+.btn-primary:hover { background: var(--brown2); }
+
+.codigo-tag {
+  background: var(--gray-lt); border: 1px dashed var(--border); border-radius: 6px;
+  padding: 7px 10px; font-size: .82rem; font-family: monospace; color: var(--brown2); min-height: 34px;
+}
+
+/* ── Subtabs ───────────────────────────────────────── */
+.subtabs { display: flex; gap: 6px; margin-bottom: 14px; }
+.subtab {
+  border: 1px solid var(--border); background: var(--white); color: var(--gray);
+  border-radius: 7px; padding: 5px 14px; font-size: .78rem; font-weight: 700; transition: all .15s;
+}
+.subtab:hover { border-color: var(--sand); color: var(--brown); }
+.subtab.active { background: var(--brown); color: var(--white); border-color: var(--brown); }
+
+/* ── Filter ────────────────────────────────────────── */
+.filter-bar { display: flex; gap: 8px; align-items: center; margin-bottom: 12px; flex-wrap: wrap; }
+.filter-bar input {
+  border: 1px solid var(--border); border-radius: 7px; padding: 6px 10px;
+  font-size: .83rem; background: var(--white); width: 220px;
+}
+.filter-bar input:focus { outline: none; border-color: var(--sand); }
+
+/* ── Toast ─────────────────────────────────────────── */
+#toast {
+  position: fixed; bottom: 20px; right: 20px; background: var(--brown2); color: var(--white);
+  padding: 12px 20px; border-radius: 10px; font-size: .85rem; font-weight: 600;
+  opacity: 0; transform: translateY(10px); transition: all .25s; z-index: 999;
+  max-width: 300px; pointer-events: none;
+}
+#toast.show { opacity: 1; transform: translateY(0); }
+#toast.err  { background: var(--err); }
+#toast.ok   { background: var(--ok); }
+
+/* ── Loader ────────────────────────────────────────── */
+#loader {
+  position: fixed; inset: 0; background: rgba(245,239,230,.9);
+  display: flex; flex-direction: column; align-items: center; justify-content: center;
+  z-index: 200; gap: 14px;
+}
+.spinner {
+  width: 40px; height: 40px; border: 4px solid var(--border);
+  border-top-color: var(--brown); border-radius: 50%;
+  animation: spin .75s linear infinite;
+}
+@keyframes spin { to { transform: rotate(360deg); } }
+#loader p { font-size: .88rem; color: var(--gray); font-weight: 600; }
+
+/* ── Autocomplete dropdown ─────────────────────────── */
+.ac-list {
+  position: absolute; top: 100%; left: 0; right: 0;
+  background: var(--white); border: 1px solid var(--border);
+  border-radius: 8px; box-shadow: 0 4px 14px rgba(0,0,0,.12);
+  z-index: 50; max-height: 200px; overflow-y: auto; list-style: none;
+}
+.ac-list li {
+  padding: 8px 12px; cursor: pointer; font-size: .83rem;
+  border-bottom: 1px solid var(--gray-lt);
+}
+.ac-list li:hover { background: var(--cream); }
+.ac-list li:last-child { border-bottom: none; }
 </style>
 </head>
 <body>
 
-<!-- API config -->
-<script>
-const API = 'https://script.google.com/macros/s/AKfycbzTM82tHG1DFf1q-IupLSnLmllrNGvkIELcP8H3LyffL0Qd8kydTSM_8x1ozmT9dr_ktA/exec';
-</script>
-
+<div id="loader"><div class="spinner"></div><p>Cargando AMARA...</p></div>
 <div id="toast"></div>
-<div id="loader"><div class="loader-box"><div class="spin"></div><p id="load-msg">Cargando...</p></div></div>
 
-<!-- ═══════════════════════════════════════════════
-     DASHBOARD
-═══════════════════════════════════════════════ -->
-<div class="view active" id="view-home">
-  <div class="hdr">
-    <div><div class="hdr-logo">AMARA</div><div class="hdr-sub">GESTIÓN</div></div>
-    <div class="hdr-nav">
-      <button class="nav-btn"   onclick="go('compra')">COMPRA</button>
-      <button class="nav-btn v" onclick="go('venta')">VENTA</button>
-      <button class="nav-btn g" onclick="go('gasto')">GASTO</button>
-      <button class="nav-btn s" onclick="go('stock')">STOCK</button>
+<header>
+  <div class="logo-wrap">
+    <div class="logo-circle">A</div>
+    <div>
+      <span class="logo-text">AMARA</span>
+      <span class="logo-sub">Gestión deportiva</span>
     </div>
   </div>
-  <div class="body">
-    <div class="month-nav">
-      <button onclick="changeMonth(-1)">‹</button>
-      <span id="mes-lbl">...</span>
-      <button onclick="changeMonth(1)" id="btn-next">›</button>
-    </div>
-    <div class="kpi-grid">
-      <div class="kpi">    <div class="kpi-lbl">Ventas</div>    <div class="kpi-val" id="k-ven">—</div><div class="kpi-sub" id="k-cant">—</div></div>
-      <div class="kpi gr"> <div class="kpi-lbl">Ganancia</div>  <div class="kpi-val gr" id="k-gan">—</div><div class="kpi-sub">neta</div></div>
-      <div class="kpi rd"> <div class="kpi-lbl">Costos</div>    <div class="kpi-val rd" id="k-cos">—</div><div class="kpi-sub" id="k-inv">inv: —</div></div>
-      <div class="kpi bl"> <div class="kpi-lbl">Stock total</div><div class="kpi-val" id="k-stk">—</div><div class="kpi-sub">unidades</div></div>
-    </div>
+  <nav>
+    <button class="active" onclick="showPanel('dashboard',this)">Dashboard</button>
+    <button onclick="showPanel('stock',this)">Stock</button>
+    <button onclick="showPanel('compra',this)">Compra</button>
+    <button onclick="showPanel('venta',this)">Venta</button>
+    <button onclick="showPanel('gasto',this)">Gasto</button>
+  </nav>
+</header>
 
-    <!-- Investment card -->
-    <div class="inv-card" id="inv-card" style="display:none">
-      <div class="inv-title">Capital inicial — Inversión por socia</div>
-      <div class="inv-body">
-        <div class="pie-wrap"><canvas id="pie-canvas" width="110" height="110"></canvas></div>
-        <div class="pie-legend" id="pie-legend"></div>
-      </div>
+<main>
+
+<!-- ════════ DASHBOARD ════════ -->
+<div id="panel-dashboard" class="panel active">
+
+  <div class="kpi-grid">
+    <div class="kpi">
+      <div class="kpi-label">Ventas del mes</div>
+      <div class="kpi-value" id="kpi-ventas">—</div>
+      <div class="kpi-sub" id="kpi-ventas-u">— unidades</div>
     </div>
-
-    <div class="sec-title">Últimas ventas</div>
-    <div class="recent-list" id="recent-list"><div class="empty">Cargando...</div></div>
-  </div>
-</div>
-
-<!-- ═══════════════════════════════════════════════
-     STOCK VIEW
-═══════════════════════════════════════════════ -->
-<div class="view" id="view-stock">
-  <div class="hdr">
-    <div><div class="hdr-logo">AMARA</div><div class="hdr-sub">GESTIÓN</div></div>
-    <div class="hdr-nav">
-      <button class="nav-btn"   onclick="go('compra')">COMPRA</button>
-      <button class="nav-btn v" onclick="go('venta')">VENTA</button>
-      <button class="nav-btn g" onclick="go('gasto')">GASTO</button>
-      <button class="nav-btn"   onclick="go('home')">INICIO</button>
+    <div class="kpi">
+      <div class="kpi-label">Costo mercaderia</div>
+      <div class="kpi-value" id="kpi-costo">—</div>
+    </div>
+    <div class="kpi">
+      <div class="kpi-label">Gastos operativos</div>
+      <div class="kpi-value" id="kpi-gastos">—</div>
+    </div>
+    <div class="kpi">
+      <div class="kpi-label">Ganancia neta</div>
+      <div class="kpi-value" id="kpi-ganancia">—</div>
+    </div>
+    <div class="kpi">
+      <div class="kpi-label">Inversion total</div>
+      <div class="kpi-value" id="kpi-inversion">—</div>
     </div>
   </div>
-  <div class="body">
-    <div class="stock-search">
-      <input id="stk-q" type="text" placeholder="Buscar por código, producto, marca, color..."
-             oninput="filterStock(this.value)">
+
+  <div class="chart-grid">
+    <div class="chart-box">
+      <div class="card-title">Ventas — ultimos 6 meses</div>
+      <canvas id="chartVentas"></canvas>
     </div>
-    <div class="stock-table-wrap">
-      <table class="stock-table">
-        <thead><tr>
-          <th>CÓDIGO</th><th>PRODUCTO</th><th>MARCA</th><th>COLOR</th><th>TALLE</th><th>CANT.</th>
-        </tr></thead>
-        <tbody id="stk-body"><tr><td colspan="6" class="empty">Cargando stock...</td></tr></tbody>
+    <div class="chart-box">
+      <div class="card-title">Stock por marca</div>
+      <canvas id="chartStock"></canvas>
+    </div>
+    <div class="chart-box">
+      <div class="card-title">Inversion por socia</div>
+      <canvas id="chartInversion"></canvas>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="card-title">Ultimas ventas</div>
+    <div class="tbl-wrap">
+      <table id="tbl-ultimas">
+        <thead><tr><th>Fecha</th><th>Producto</th><th class="num">Cant.</th><th class="num">Monto</th></tr></thead>
+        <tbody><tr><td colspan="4" style="text-align:center;color:var(--gray);padding:16px">Cargando...</td></tr></tbody>
       </table>
     </div>
   </div>
 </div>
 
-<!-- ═══════════════════════════════════════════════
-     COMPRA
-═══════════════════════════════════════════════ -->
-<div class="view" id="view-compra">
-  <div class="hdr">
-    <div><div class="hdr-logo">AMARA</div><div class="hdr-sub">GESTIÓN</div></div>
-    <div class="hdr-nav">
-      <button class="nav-btn v" onclick="go('venta')">VENTA</button>
-      <button class="nav-btn g" onclick="go('gasto')">GASTO</button>
-      <button class="nav-btn s" onclick="go('stock')">STOCK</button>
-      <button class="nav-btn"   onclick="go('home')">INICIO</button>
+<!-- ════════ STOCK ════════ -->
+<div id="panel-stock" class="panel">
+  <div class="card">
+    <div class="card-title">Stock actual</div>
+    <div class="filter-bar">
+      <input type="text" id="filtroStock" placeholder="Buscar producto, marca, codigo..." oninput="filtrarStock()">
+      <span id="stock-count" style="font-size:.78rem;color:var(--gray)"></span>
     </div>
-  </div>
-  <div class="body">
-  <div class="form-inner">
-    <div class="form-back">
-      <button onclick="go('home')">←</button>
-      <div><h2>NUEVA COMPRA</h2><p>REGISTRAR STOCK</p></div>
+    <div class="tbl-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th>Codigo</th><th>Marca</th><th>Producto</th>
+            <th>Color</th><th>Talle</th><th class="num">Cant.</th><th>Categoria</th>
+          </tr>
+        </thead>
+        <tbody id="tbl-stock-body">
+          <tr><td colspan="7" style="text-align:center;color:var(--gray);padding:16px">Cargando...</td></tr>
+        </tbody>
+      </table>
     </div>
-
-    <!-- Autocomplete search -->
-    <div class="ac-wrap">
-      <span class="ac-icon">⌕</span>
-      <input id="c-search" type="text" placeholder="Buscar producto existente..." oninput="onAc(this,'c-ac',fillCompra)" autocomplete="off">
-      <div class="ac-drop" id="c-ac"></div>
-    </div>
-
-    <!-- Marca + Categoría -->
-    <div class="frow fr2">
-      <div class="fg"><label>Marca</label><input type="text" id="c-marca" placeholder="BAL" oninput="up(this);autoCode()"></div>
-      <div class="fg"><label>Categoría</label>
-        <select id="c-cat" oninput="autoCode()">
-          <option value="">— tipo —</option>
-          <option>CALZA</option><option>PANTALON</option><option>BUZO</option>
-          <option>CAMPERA</option><option>REMERA</option><option>MUSCULOSA</option>
-          <option>CONJUNTO</option><option>SHORT</option><option>OTRO</option>
-        </select>
-      </div>
-    </div>
-
-    <!-- Producto -->
-    <div class="frow">
-      <div class="fg"><label>Producto / Modelo</label><input type="text" id="c-prod" placeholder="Nombre del producto" oninput="up(this);autoCode()"></div>
-    </div>
-
-    <!-- Color + Talle + Cantidad + Precio -->
-    <div class="frow fr4">
-      <div class="fg"><label>Color</label><input type="text" id="c-color" placeholder="NEGRO" oninput="up(this);autoCode()"></div>
-      <div class="fg"><label>Talle</label><input type="text" id="c-talle" placeholder="M" oninput="up(this);autoCode()"></div>
-      <div class="fg"><label>Cantidad</label><input type="number" id="c-cant" value="1" min="1"></div>
-      <div class="fg"><label>Precio ($)</label><input type="number" id="c-precio" placeholder="0" min="0" step="0.01"></div>
-    </div>
-
-    <!-- Auto-código -->
-    <div class="codigo-row">
-      <span class="codigo-label">Código:</span>
-      <input class="codigo-val" type="text" id="c-codigo" placeholder="Auto — o editá manualmente" oninput="cCodigoManual=true">
-    </div>
-
-    <button class="btn-submit c" onclick="submitCompra()">GUARDAR COMPRA</button>
-  </div>
   </div>
 </div>
 
-<!-- ═══════════════════════════════════════════════
-     VENTA
-═══════════════════════════════════════════════ -->
-<div class="view" id="view-venta">
-  <div class="hdr">
-    <div><div class="hdr-logo">AMARA</div><div class="hdr-sub">GESTIÓN</div></div>
-    <div class="hdr-nav">
-      <button class="nav-btn"   onclick="go('compra')">COMPRA</button>
-      <button class="nav-btn g" onclick="go('gasto')">GASTO</button>
-      <button class="nav-btn s" onclick="go('stock')">STOCK</button>
-      <button class="nav-btn"   onclick="go('home')">INICIO</button>
-    </div>
-  </div>
-  <div class="body">
-  <div class="form-inner">
-    <div class="form-back">
-      <button onclick="go('home')">←</button>
-      <div><h2>NUEVA VENTA</h2><p>REGISTRAR VENTA</p></div>
-    </div>
-
-    <div class="ac-wrap">
-      <span class="ac-icon">⌕</span>
-      <input id="v-search" type="text" placeholder="Buscar en stock..." oninput="onAcVenta(this.value)" autocomplete="off">
-      <div class="ac-drop" id="v-ac"></div>
-    </div>
-
-    <div id="v-stk-badge"></div>
-
-    <!-- Producto info (readonly) -->
-    <div class="frow fr3">
-      <div class="fg"><label>Código</label><input type="text" id="v-codigo" readonly></div>
-      <div class="fg"><label>Marca</label><input type="text" id="v-marca" readonly></div>
-      <div class="fg"><label>Talle</label><input type="text" id="v-talle" readonly></div>
-    </div>
-    <div class="frow fr2">
-      <div class="fg"><label>Producto</label><input type="text" id="v-prod" readonly></div>
-      <div class="fg"><label>Color</label><input type="text" id="v-color" readonly></div>
-    </div>
-
-    <hr class="div">
-
-    <!-- Transacción -->
-    <div class="frow fr3">
-      <div class="fg"><label>Cantidad</label><input type="number" id="v-cant" value="1" min="1" oninput="calcGan()"></div>
-      <div class="fg"><label>Valor venta ($)</label><input type="number" id="v-val" placeholder="0" oninput="calcGan()"></div>
-      <div class="fg"><label>Canal</label>
-        <select id="v-tipo">
-          <option value="LOCAL">Local</option>
-          <option value="ONLINE">Online</option>
-          <option value="CONSIGNACION">Consignación</option>
-        </select>
+<!-- ════════ COMPRA ════════ -->
+<div id="panel-compra" class="panel">
+  <div class="card">
+    <div class="card-title">Registrar compra</div>
+    <form id="form-compra" onsubmit="submitCompra(event)">
+      <div class="form-grid">
+        <div class="form-group">
+          <label>Fecha</label>
+          <input type="date" id="c-fecha" name="fecha">
+        </div>
+        <div class="form-group">
+          <label>Marca / Proveedor</label>
+          <input type="text" id="c-marca" name="marca" placeholder="Adidas, Nike..." required oninput="actualizarCodigo()">
+        </div>
+        <div class="form-group">
+          <label>Categoria</label>
+          <select id="c-categoria" name="categoria" onchange="actualizarCodigo()">
+            <option value="">— Seleccionar —</option>
+            <option>Remera</option><option>Buzo</option><option>Campera</option>
+            <option>Pantalon</option><option>Short</option><option>Calza</option>
+            <option>Camiseta</option><option>Conjunto</option><option>Medias</option>
+            <option>Zapatilla</option><option>Chaleco</option><option>Musculosa</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label>Producto</label>
+          <input type="text" id="c-producto" name="producto" placeholder="Nombre del producto" required autocomplete="off" oninput="actualizarCodigo()">
+        </div>
+        <div class="form-group">
+          <label>Color</label>
+          <input type="text" id="c-color" name="color" placeholder="Negro, Blanco..." oninput="actualizarCodigo()">
+        </div>
+        <div class="form-group">
+          <label>Talle</label>
+          <select id="c-talle" name="talle" onchange="actualizarCodigo()">
+            <option value="">—</option>
+            <option>XS</option><option>S</option><option>M</option><option>L</option>
+            <option>XL</option><option>XXL</option><option>36</option><option>38</option>
+            <option>40</option><option>42</option><option>44</option><option>U</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label>Unidades</label>
+          <input type="number" id="c-cantidad" name="cantidad" min="1" value="1" required>
+        </div>
+        <div class="form-group">
+          <label>Precio costo (u.)</label>
+          <input type="number" id="c-precio" name="precioCosto" min="0" step="1" placeholder="0" required>
+        </div>
+        <div class="form-group span2">
+          <label>Codigo generado</label>
+          <div class="codigo-tag" id="c-codigo">Completa los campos para generar</div>
+        </div>
       </div>
-    </div>
-
-    <div class="frow">
-      <div class="fg"><label>Medio de pago</label>
-        <select id="v-pago">
-          <option value="EFECTIVO">Efectivo</option>
-          <option value="TRANSFERENCIA">Transferencia</option>
-          <option value="MERCADO PAGO">Mercado Pago</option>
-          <option value="DEBITO">Débito</option>
-          <option value="CREDITO">Crédito</option>
-        </select>
+      <div style="margin-top:14px;display:flex;gap:10px;align-items:center">
+        <button type="submit" class="btn btn-primary">Registrar compra</button>
+        <span id="compra-status" style="font-size:.82rem;color:var(--err)"></span>
       </div>
-    </div>
-
-    <div class="gan-box" id="gan-box">
-      <div class="gan-row"><span>Costo unitario</span><span id="g-cu">—</span></div>
-      <div class="gan-row"><span>Costo total</span><span id="g-ct">—</span></div>
-      <div class="gan-total"><span>Ganancia</span><span id="g-gan">—</span></div>
-    </div>
-
-    <button class="btn-submit v" onclick="submitVenta()">GUARDAR VENTA</button>
-  </div>
+    </form>
   </div>
 </div>
 
-<!-- ═══════════════════════════════════════════════
-     GASTO
-═══════════════════════════════════════════════ -->
-<div class="view" id="view-gasto">
-  <div class="hdr">
-    <div><div class="hdr-logo">AMARA</div><div class="hdr-sub">GESTIÓN</div></div>
-    <div class="hdr-nav">
-      <button class="nav-btn"   onclick="go('compra')">COMPRA</button>
-      <button class="nav-btn v" onclick="go('venta')">VENTA</button>
-      <button class="nav-btn s" onclick="go('stock')">STOCK</button>
-      <button class="nav-btn"   onclick="go('home')">INICIO</button>
-    </div>
-  </div>
-  <div class="body">
-  <div class="form-inner">
-    <div class="form-back">
-      <button onclick="go('home')">←</button>
-      <div><h2>NUEVO GASTO</h2><p>REGISTRAR GASTO</p></div>
-    </div>
-
-    <label style="font-size:9px;font-weight:700;letter-spacing:.7px;color:var(--gray);text-transform:uppercase;display:block;margin-bottom:5px">Tipo de gasto</label>
-    <div class="toggle-grp" style="margin-bottom:12px">
-      <button class="tgl on" id="tg-c" onclick="setGTipo('COSTO')">COSTO OPERATIVO</button>
-      <button class="tgl"    id="tg-i" onclick="setGTipo('INVERSION')">INVERSIÓN</button>
-    </div>
-
-    <div class="frow fr2">
-      <div class="fg"><label>Categoría</label><select id="g-cat"><option value="">— seleccionar —</option></select></div>
-      <div class="fg"><label>Medio de pago</label>
-        <select id="g-pago">
-          <option value="EFECTIVO">Efectivo</option>
-          <option value="TRANSFERENCIA">Transferencia</option>
-          <option value="MERCADO PAGO">Mercado Pago</option>
-          <option value="DEBITO">Débito</option>
-          <option value="CREDITO">Crédito</option>
-        </select>
+<!-- ════════ VENTA ════════ -->
+<div id="panel-venta" class="panel">
+  <div class="card">
+    <div class="card-title">Registrar venta</div>
+    <form id="form-venta" onsubmit="submitVenta(event)">
+      <div class="form-grid">
+        <div class="form-group">
+          <label>Fecha</label>
+          <input type="date" id="v-fecha" name="fecha">
+        </div>
+        <div class="form-group span2" style="position:relative">
+          <label>Producto</label>
+          <input type="text" id="v-producto" name="producto" placeholder="Buscar producto del stock..."
+                 required autocomplete="off" oninput="buscarVenta(this.value)">
+          <ul class="ac-list" id="v-ac" style="display:none"></ul>
+        </div>
+        <div class="form-group">
+          <label>Marca</label>
+          <input type="text" id="v-marca" name="marca" placeholder="Auto">
+        </div>
+        <div class="form-group">
+          <label>Color</label>
+          <input type="text" id="v-color" name="color">
+        </div>
+        <div class="form-group">
+          <label>Talle</label>
+          <input type="text" id="v-talle" name="talle">
+        </div>
+        <div class="form-group">
+          <label>Cantidad</label>
+          <input type="number" id="v-cantidad" name="cantidad" min="1" value="1" required>
+        </div>
+        <div class="form-group">
+          <label>Precio venta (u.)</label>
+          <input type="number" id="v-precio" name="precioVenta" min="0" step="1" required>
+        </div>
+        <div class="form-group">
+          <label>Costo ref. (u.)</label>
+          <input type="number" id="v-costo" name="costo" min="0" step="1"
+                 placeholder="Auto desde compras" style="background:var(--gray-lt)" readonly>
+        </div>
       </div>
-    </div>
-    <div class="frow">
-      <div class="fg"><label>Descripción</label><input type="text" id="g-desc" placeholder="Detalle del gasto"></div>
-    </div>
-    <div class="frow">
-      <div class="fg"><label>Monto ($)</label><input type="number" id="g-monto" placeholder="0" min="0" step="0.01"></div>
-    </div>
-    <div class="frow">
-      <div class="fg"><label>Notas (opcional)</label><input type="text" id="g-notas" placeholder="Información adicional"></div>
-    </div>
-
-    <button class="btn-submit g" onclick="submitGasto()">GUARDAR GASTO</button>
-  </div>
+      <div style="margin-top:14px;display:flex;gap:10px;align-items:center">
+        <button type="submit" class="btn btn-primary">Registrar venta</button>
+        <span id="venta-status" style="font-size:.82rem;color:var(--err)"></span>
+      </div>
+    </form>
   </div>
 </div>
 
-<!-- ═══════════════════════════════════════════════
-     JAVASCRIPT
-═══════════════════════════════════════════════ -->
-<script>
-// ── State ────────────────────────────────────────
-let monthOffset  = 0;
-let gastoTipo    = 'COSTO';
-let ventaItem    = null;
-let stockAll     = [];    // full stock for filter
-let cCodigoManual = false;
+<!-- ════════ GASTO ════════ -->
+<div id="panel-gasto" class="panel">
+  <div class="subtabs">
+    <button class="subtab active" onclick="showSubtab('costo',this)">Costo operativo</button>
+    <button class="subtab" onclick="showSubtab('inversion',this)">Inversion</button>
+  </div>
 
-const GCAT_COSTO = ['ALQUILER','SERVICIOS','INTERNET / TELEFONO','TRANSPORTE',
-  'MARKETING / PUBLICIDAD','EMBALAJE / PACKAGING','GASTOS BANCARIOS',
-  'COMISIONES','IMPUESTOS','SUELDOS','OTROS'];
-const GCAT_INV   = ['MOBILIARIO','EQUIPAMIENTO','INDUMENTARIA / STOCK INICIAL',
-  'REFORMAS','MATERIALES','TECNOLOGIA','OTROS'];
-
-const TIPO_ABR  = {CALZA:'CL',CALZAS:'CL',PANTALON:'PT',PANTALONES:'PT','PANTALÓN':'PT',
-  BUZO:'BZ',BUZOS:'BZ',CAMPERA:'CP',CAMPERAS:'CP',REMERA:'RE',REMERAS:'RE',
-  MUSCULOSA:'MS',MUSCULOSAS:'MS',CONJUNTO:'CJ',CONJUNTOS:'CJ',SHORT:'SH',SHORTS:'SH',OTRO:'OT'};
-const COLOR_ABR = {NEGRO:'NE',NEGRA:'NE',BLANCO:'BL',BLANCA:'BL',GRIS:'GR',AZUL:'AZ',
-  ROSA:'RS',BEIGE:'BE',MARRON:'MR','MARRÓN':'MR',VERDE:'VE',ROJO:'RJ',ROJA:'RJ',
-  NARANJA:'NJ',VIOLETA:'VI',LILA:'LI',AMARILLO:'AM',NUDE:'NU',BORDO:'BO','BORDÓ':'BO',CELESTE:'CE'};
-
-// ── Navigation ───────────────────────────────────
-function go(view) {
-  document.querySelectorAll('.view').forEach(v => v.classList.remove('active'));
-  document.getElementById('view-' + view).classList.add('active');
-  if (view === 'home')   loadDashboard();
-  if (view === 'stock')  loadStockView();
-  if (view === 'compra') resetCompra();
-  if (view === 'venta')  resetVenta();
-  if (view === 'gasto')  resetGasto();
-}
-
-// ── API ──────────────────────────────────────────
-async function apiGet(params) {
-  const r = await fetch(API + '?' + new URLSearchParams(params));
-  return r.json();
-}
-async function apiPost(body) {
-  const r = await fetch(API, { method:'POST', body:JSON.stringify(body), headers:{'Content-Type':'text/plain'} });
-  return r.json();
-}
-
-// ── Toast / Loader ───────────────────────────────
-let toastTimer;
-function toast(msg, type='') {
-  const t = document.getElementById('toast');
-  t.textContent = msg; t.className = 'show ' + type;
-  clearTimeout(toastTimer);
-  toastTimer = setTimeout(() => t.className = '', 3000);
-}
-function load(show, msg='Guardando...') {
-  document.getElementById('loader').classList.toggle('on', show);
-  document.getElementById('load-msg').textContent = msg;
-}
-
-// ── Formatting ───────────────────────────────────
-const $ = id => document.getElementById(id);
-function fmt(n) { return (+n||0).toLocaleString('es-AR',{maximumFractionDigits:0}); }
-function fmtk(n) { return '$' + fmt(n); }
-
-// ── Dashboard ────────────────────────────────────
-function changeMonth(dir) {
-  if (monthOffset + dir > 0) return;
-  monthOffset += dir;
-  loadDashboard();
-}
-
-async function loadDashboard() {
-  $('mes-lbl').textContent = '...';
-  $('btn-next').disabled = monthOffset >= 0;
-  try {
-    const d = await apiGet({ action:'dashboard', offset:monthOffset });
-    if (!d.ok) throw new Error(d.error);
-    $('mes-lbl').textContent = d.mes;
-    $('k-ven').textContent  = fmtk(d.kpis.ventas);
-    $('k-cant').textContent = d.kpis.cantVentas + ' venta' + (d.kpis.cantVentas!==1?'s':'');
-    $('k-gan').textContent  = fmtk(d.kpis.ganancia);
-    $('k-cos').textContent  = fmtk(d.kpis.costos);
-    $('k-inv').textContent  = 'inv: ' + fmtk(d.kpis.inversion);
-    $('k-stk').textContent  = d.kpis.unidades;
-
-    const list = $('recent-list');
-    if (!d.recent.length) {
-      list.innerHTML = '<div class="empty">Sin ventas en este período</div>';
-    } else {
-      list.innerHTML = d.recent.map(r => `
-        <div class="r-item">
-          <div class="r-dot"></div>
-          <div class="r-info">
-            <div class="r-name">${r.producto||'—'}</div>
-            <div class="r-sub">${r.fecha} · ${r.marca} ${r.color?'· '+r.color:''} ${r.talle||''}</div>
+  <div id="gasto-sub-costo">
+    <div class="card">
+      <div class="card-title">Registrar costo operativo</div>
+      <form id="form-gasto" onsubmit="submitGasto(event)">
+        <div class="form-grid">
+          <div class="form-group">
+            <label>Fecha</label>
+            <input type="date" id="g-fecha" name="fecha">
           </div>
-          <div class="r-val">${fmtk(r.valor)}</div>
-        </div>`).join('');
-    }
-  } catch(e) {
-    $('mes-lbl').textContent = 'Error';
-    toast('Error cargando datos: ' + e.message, 'err');
-  }
-  loadInversion();
+          <div class="form-group">
+            <label>Categoria</label>
+            <select id="g-tipo" name="tipo">
+              <option value="Costo">Costo operativo</option>
+              <option value="Envio">Envio / flete</option>
+              <option value="Publicidad">Publicidad</option>
+              <option value="Servicio">Servicio</option>
+              <option value="Alquiler">Alquiler</option>
+              <option value="Otro">Otro</option>
+            </select>
+          </div>
+          <div class="form-group span2">
+            <label>Descripcion</label>
+            <input type="text" id="g-desc" name="desc" placeholder="Detalle del gasto" required>
+          </div>
+          <div class="form-group">
+            <label>Monto</label>
+            <input type="number" id="g-monto" name="monto" min="0" step="1" required>
+          </div>
+        </div>
+        <div style="margin-top:14px">
+          <button type="submit" class="btn btn-primary">Registrar gasto</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <div id="gasto-sub-inversion" style="display:none">
+    <div class="card">
+      <div class="card-title">Inversion total por socia</div>
+      <div id="inv-socias-cards" style="display:flex;gap:12px;flex-wrap:wrap;margin-bottom:16px"></div>
+      <div class="chart-box" style="max-width:300px">
+        <canvas id="chartInversionDetalle"></canvas>
+      </div>
+    </div>
+    <div class="card">
+      <div class="card-title">Registrar inversion de socia</div>
+      <form id="form-inversion" onsubmit="submitInversion(event)">
+        <div class="form-grid">
+          <div class="form-group">
+            <label>Fecha</label>
+            <input type="date" id="gi-fecha" name="fecha">
+          </div>
+          <div class="form-group">
+            <label>Socia</label>
+            <select id="gi-socia" name="tipo">
+              <option value="Inversion-Luana">Luana</option>
+              <option value="Inversion-Kiara">Kiara</option>
+              <option value="Inversion-Amara">Amara</option>
+            </select>
+          </div>
+          <div class="form-group span2">
+            <label>Concepto</label>
+            <input type="text" id="gi-desc" name="desc" placeholder="Descripcion de la inversion" required>
+          </div>
+          <div class="form-group">
+            <label>Monto</label>
+            <input type="number" id="gi-monto" name="monto" min="0" step="1" required>
+          </div>
+        </div>
+        <div style="margin-top:14px">
+          <button type="submit" class="btn btn-primary">Registrar inversion</button>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>
+
+</main>
+
+<script>
+const API_URL = 'https://script.google.com/macros/s/AKfycbynfVVo94aN9Lfp8NHF7sfnLFzrctyD6PUtoQIqgoyOcvA3jTPVxcMFJS8j7O2_cjaUnw/exec';
+
+let gData     = null;
+let stockRows = [];
+let charts    = {};
+
+// ── Codigo automático ──────────────────────────────────────────────────
+const TIPO_ABR  = {REMERA:'RE',BUZO:'BU',CAMPERA:'CA',PANTALON:'PA',SHORT:'SH',CALZA:'CL',MEDIAS:'ME',ZAPATILLA:'ZA',CAMISETA:'CM',CONJUNTO:'CO',CHALECO:'CH',MUSCULOSA:'MU'};
+const COLOR_ABR = {NEGRO:'NE',BLANCO:'BL',ROJO:'RO',AZUL:'AZ',VERDE:'VE',AMARILLO:'AM',GRIS:'GR',ROSA:'RS',NARANJA:'NA',VIOLETA:'VI',CELESTE:'CE','BORDÓ':'BO',MARRON:'MR',BEIGE:'BE'};
+
+function generarCodigo(marca,tipo,color,talle,producto) {
+  const m = (marca||'').toUpperCase().replace(/\s+/g,'').slice(0,4).padEnd(4,'X');
+  const t = TIPO_ABR[(tipo||'').toUpperCase()] || (tipo||'').toUpperCase().slice(0,2).padEnd(2,'X');
+  const c = COLOR_ABR[(color||'').toUpperCase()] || (color||'').toUpperCase().slice(0,2).padEnd(2,'X');
+  const z = ((talle||'').toUpperCase().slice(0,1)) || 'X';
+  const p = (producto||'').toUpperCase().replace(/\s+/g,'').slice(0,5).padEnd(5,'X');
+  return `${m}-${t}-${c}-${z}-${p}`;
 }
 
-async function loadInversion() {
-  try {
-    const d = await apiGet({ action:'inversion' });
-    if (!d.ok || !d.socias || !d.socias.length) return;
-    const total = d.totalCapital;
-    const card  = $('inv-card');
-    card.style.display = 'block';
-
-    // Pie chart
-    const canvas = $('pie-canvas');
-    const ctx    = canvas.getContext('2d');
-    const cx = 55, cy = 55, r = 48;
-    ctx.clearRect(0,0,110,110);
-    let angle = -Math.PI/2;
-    d.socias.forEach(s => {
-      const sweep = (s.monto / total) * 2 * Math.PI;
-      ctx.beginPath();
-      ctx.moveTo(cx, cy);
-      ctx.arc(cx, cy, r, angle, angle + sweep);
-      ctx.closePath();
-      ctx.fillStyle = s.color;
-      ctx.fill();
-      ctx.strokeStyle = '#fff';
-      ctx.lineWidth = 2;
-      ctx.stroke();
-      angle += sweep;
-    });
-
-    // Legend
-    const legend = $('pie-legend');
-    legend.innerHTML = d.socias.map(s => {
-      const pct = ((s.monto / total) * 100).toFixed(1);
-      return `<div class="leg-item">
-        <span class="leg-dot" style="background:${s.color}"></span>
-        <span class="leg-name">${s.nombre}</span>
-        <span class="leg-pct">${pct}%</span>
-        <span class="leg-amt">${fmtk(s.monto)}</span>
-      </div>`;
-    }).join('') + `<div style="margin-top:4px;padding-top:6px;border-top:1px solid var(--pll);font-size:11px;color:var(--gray)">Total: <strong>${fmtk(total)}</strong></div>`;
-  } catch(e) {}
-}
-
-// ── Stock view ────────────────────────────────────
-async function loadStockView() {
-  $('stk-body').innerHTML = '<tr><td colspan="6" class="empty">Cargando...</td></tr>';
-  try {
-    const d = await apiGet({ action:'stock_view', q:'' });
-    if (!d.ok) throw new Error(d.error);
-    stockAll = d.items;
-    renderStock(stockAll);
-  } catch(e) {
-    $('stk-body').innerHTML = '<tr><td colspan="6" class="empty">Error: ' + e.message + '</td></tr>';
-  }
-}
-
-function filterStock(q) {
-  const ql = q.toLowerCase();
-  const filtered = stockAll.filter(r =>
-    !ql ||
-    r.codigo.toLowerCase().includes(ql)   ||
-    r.producto.toLowerCase().includes(ql) ||
-    r.marca.toLowerCase().includes(ql)    ||
-    r.color.toLowerCase().includes(ql)
+function actualizarCodigo() {
+  const cod = generarCodigo(
+    document.getElementById('c-marca').value,
+    document.getElementById('c-categoria').value,
+    document.getElementById('c-color').value,
+    document.getElementById('c-talle').value,
+    document.getElementById('c-producto').value
   );
-  renderStock(filtered);
+  document.getElementById('c-codigo').textContent = cod;
 }
 
-function renderStock(items) {
-  if (!items.length) {
-    $('stk-body').innerHTML = '<tr><td colspan="6" class="empty">Sin resultados</td></tr>';
+// ── Navegación ─────────────────────────────────────────────────────────
+function showPanel(name, btn) {
+  document.querySelectorAll('.panel').forEach(p => p.classList.remove('active'));
+  document.getElementById('panel-' + name).classList.add('active');
+  document.querySelectorAll('nav button').forEach(b => b.classList.remove('active'));
+  if (btn) btn.classList.add('active');
+}
+
+function showSubtab(name, btn) {
+  document.getElementById('gasto-sub-costo').style.display      = name === 'costo'     ? '' : 'none';
+  document.getElementById('gasto-sub-inversion').style.display  = name === 'inversion' ? '' : 'none';
+  document.querySelectorAll('.subtab').forEach(b => b.classList.remove('active'));
+  btn.classList.add('active');
+  if (name === 'inversion' && gData) renderInversionPanel(gData.inversion);
+}
+
+// ── API ────────────────────────────────────────────────────────────────
+async function apiGet(params) {
+  const url = API_URL + '?' + new URLSearchParams(params).toString();
+  const r = await fetch(url);
+  return r.json();
+}
+
+async function apiPost(body) {
+  const r = await fetch(API_URL, {
+    method: 'POST', body: JSON.stringify(body),
+    headers: { 'Content-Type': 'text/plain' }
+  });
+  return r.json();
+}
+
+// ── Helpers ────────────────────────────────────────────────────────────
+function pesos(n) {
+  if (n === null || n === undefined) return '—';
+  return '$' + Number(n).toLocaleString('es-AR', {minimumFractionDigits:0,maximumFractionDigits:0});
+}
+
+let toastT;
+function toast(msg, type) {
+  const el = document.getElementById('toast');
+  el.textContent = msg;
+  el.className = 'show' + (type ? ' '+type : '');
+  clearTimeout(toastT);
+  toastT = setTimeout(() => el.className = '', 3200);
+}
+
+function todayISO() { return new Date().toLocaleDateString('sv'); }
+function setDates() {
+  const d = todayISO();
+  ['c-fecha','v-fecha','g-fecha','gi-fecha'].forEach(id => {
+    const el = document.getElementById(id);
+    if (el && !el.value) el.value = d;
+  });
+}
+
+// ── Dashboard ──────────────────────────────────────────────────────────
+function renderDashboard(data) {
+  const k = data.kpis;
+
+  setText('kpi-ventas',   pesos(k.ventasMes));
+  setText('kpi-ventas-u', (k.unidadesMes||0) + ' unidades');
+  setText('kpi-costo',    pesos(k.costoMes));
+  setText('kpi-gastos',   pesos(k.gastosMes));
+
+  const gEl = document.getElementById('kpi-ganancia');
+  gEl.textContent = pesos(k.gananciaMes);
+  gEl.className   = 'kpi-value ' + (k.gananciaMes >= 0 ? 'pos' : 'neg');
+
+  setText('kpi-inversion', pesos(data.inversion.total));
+
+  // Bar chart ventas
+  mkBar('chartVentas', data.tendencia.labels, data.tendencia.valores, '#7A5C42');
+
+  // Doughnut stock
+  mkDoughnut('chartStock',
+    data.stockMarca.labels,
+    data.stockMarca.valores,
+    ['#7A5C42','#C49A6C','#E8C99A','#5C3D2E','#A07850','#D4B896','#3D2A1E','#B8956E']
+  );
+
+  // Doughnut inversion
+  mkDoughnut('chartInversion',
+    data.inversion.socias.map(s => s.nombre),
+    data.inversion.socias.map(s => s.monto),
+    data.inversion.socias.map(s => s.color)
+  );
+
+  // Tabla ultimas ventas
+  const tbody = document.querySelector('#tbl-ultimas tbody');
+  tbody.innerHTML = '';
+  const uv = data.ultimasVentas || [];
+  if (!uv.length) {
+    tbody.innerHTML = '<tr><td colspan="4" style="text-align:center;color:var(--gray);padding:16px">Sin ventas este mes</td></tr>';
     return;
   }
-  $('stk-body').innerHTML = items.map(r => {
-    const qCls = r.cantidad === 0 ? 'qty-zero' : r.cantidad <= 3 ? 'qty-low' : 'qty-ok';
-    return `<tr>
-      <td><span class="cod-chip">${r.codigo||'—'}</span></td>
-      <td>${r.producto}</td>
-      <td>${r.marca}</td>
-      <td>${r.color}</td>
-      <td>${r.talle}</td>
-      <td><span class="qty-badge ${qCls}">${r.cantidad}</span></td>
-    </tr>`;
-  }).join('');
-}
-
-// ── Autocomplete ─────────────────────────────────
-let acTimer;
-function onAc(input, dropId, callback, stockOnly=false) {
-  clearTimeout(acTimer);
-  const q = input.value;
-  if (q.length < 2) { $(dropId).style.display='none'; return; }
-  acTimer = setTimeout(async () => {
-    try {
-      const action = stockOnly ? 'stock_venta' : 'suggestions';
-      const d = await apiGet({ action, q });
-      if (!d.ok || !d.items.length) { $(dropId).style.display='none'; return; }
-      const drop = $(dropId);
-      drop._items = d.items;
-      drop._cb    = callback;
-      drop.innerHTML = d.items.map((it, i) => {
-        const badge = stockOnly ? `<span class="ac-badge ${it.cantidad<=2?'lo':''}">${it.cantidad} u.</span>` : '';
-        return `<div class="ac-item" onclick="selectAc('${dropId}',${i})">
-          <div style="flex:1">
-            <div class="ac-main">${it.producto||it.codigo}</div>
-            <div class="ac-sub">${it.marca} · ${it.color} · T${it.talle} · <code>${it.codigo}</code></div>
-          </div>${badge}</div>`;
-      }).join('');
-      drop.style.display = 'block';
-    } catch(e) {}
-  }, 320);
-}
-
-function selectAc(dropId, idx) {
-  const drop = $(dropId);
-  const item = drop._items[idx];
-  drop._cb(item);
-  drop.style.display = 'none';
-}
-
-function onAcVenta(q) {
-  clearTimeout(acTimer);
-  if (q.length < 2) { $('v-ac').style.display='none'; return; }
-  acTimer = setTimeout(async () => {
-    try {
-      const d = await apiGet({ action:'stock_venta', q });
-      if (!d.ok || !d.items.length) { $('v-ac').style.display='none'; return; }
-      const drop = $('v-ac');
-      drop._items = d.items;
-      drop.innerHTML = d.items.map((it, i) => `
-        <div class="ac-item" onclick="selectAcVenta(${i})">
-          <div style="flex:1">
-            <div class="ac-main">${it.producto||it.codigo}</div>
-            <div class="ac-sub">${it.marca} · ${it.color} · T${it.talle} · <code>${it.codigo}</code></div>
-          </div>
-          <span class="ac-badge ${it.cantidad<=2?'lo':''}">${it.cantidad} u.</span>
-        </div>`).join('');
-      drop.style.display = 'block';
-    } catch(e) {}
-  }, 320);
-}
-
-function selectAcVenta(idx) {
-  const item = $('v-ac')._items[idx];
-  $('v-ac').style.display = 'none';
-  fillVenta(item);
-}
-
-// ── COMPRA ────────────────────────────────────────
-function resetCompra() {
-  ['c-search','c-marca','c-prod','c-color','c-talle','c-codigo'].forEach(id => $(id).value='');
-  $('c-cant').value=1; $('c-precio').value=''; $('c-cat').value='';
-  $('c-ac').style.display='none';
-  cCodigoManual = false;
-}
-
-function fillCompra(item) {
-  $('c-search').value = item.producto + ' · ' + item.codigo;
-  $('c-marca').value  = item.marca;
-  $('c-prod').value   = item.producto;
-  $('c-color').value  = item.color;
-  $('c-talle').value  = item.talle;
-  $('c-cat').value    = item.categoria || '';
-  // Don't override codigo if user typed manually
-  if (!cCodigoManual) $('c-codigo').value = item.codigo;
-  $('c-ac').style.display = 'none';
-}
-
-// Auto-code generation
-function autoCode() {
-  if (cCodigoManual) return;
-  const marca  = ($('c-marca').value||'').toUpperCase().replace(/\s+/g,'').substring(0,4);
-  const cat    = ($('c-cat').value||'').toUpperCase().replace(/\s+/g,'');
-  const color  = ($('c-color').value||'').toUpperCase().replace(/\s+/g,'');
-  const talle  = ($('c-talle').value||'').toUpperCase().replace(/\s+/g,'').substring(0,1)||'U';
-  const prod   = ($('c-prod').value||'').toUpperCase().replace(/\s+/g,'').substring(0,5);
-  if (!marca||!cat||!color) return;
-  const t = TIPO_ABR[cat]   || cat.substring(0,2);
-  const c = COLOR_ABR[color]|| color.substring(0,2);
-  $('c-codigo').value = `${marca}-${t}-${c}-${talle}-${prod||'XXX'}`;
-}
-
-async function submitCompra() {
-  const marca  = $('c-marca').value.trim();
-  const prod   = $('c-prod').value.trim();
-  const color  = $('c-color').value.trim();
-  const talle  = $('c-talle').value.trim();
-  const cant   = parseInt($('c-cant').value)||0;
-  const precio = parseFloat($('c-precio').value)||0;
-  const codigo = $('c-codigo').value.trim().toUpperCase();
-
-  if (!marca||!prod||!color||!talle||cant<1) { toast('Completá los campos obligatorios','err'); return; }
-
-  load(true,'Guardando compra...');
-  try {
-    const r = await apiPost({ action:'compra', marca, codigo, categoria:$('c-cat').value, producto:prod, color, talle, cantidad:cant, precio });
-    if (!r.ok) throw new Error(r.error);
-    toast(r.action==='updated' ? `Stock actualizado · ${r.newQty} unidades en total` : 'Compra registrada', 'ok');
-    go('home');
-  } catch(e) {
-    toast('Error: '+e.message,'err');
-  } finally { load(false); }
-}
-
-// ── VENTA ─────────────────────────────────────────
-function resetVenta() {
-  $('v-search').value='';
-  ['v-codigo','v-marca','v-talle','v-prod','v-color'].forEach(id=>$(id).value='');
-  $('v-cant').value=1; $('v-val').value='';
-  $('v-stk-badge').innerHTML='';
-  $('gan-box').classList.remove('show');
-  $('v-ac').style.display='none';
-  ventaItem=null;
-}
-
-function fillVenta(item) {
-  ventaItem = item;
-  $('v-search').value = item.producto+' · '+item.codigo;
-  $('v-codigo').value = item.codigo;
-  $('v-marca').value  = item.marca;
-  $('v-talle').value  = item.talle;
-  $('v-prod').value   = item.producto;
-  $('v-color').value  = item.color;
-  const b = $('v-stk-badge');
-  b.innerHTML = `<div class="stk-badge ${item.cantidad<=2?'stk-lo':'stk-ok'}" style="margin-bottom:8px">Disponible: ${item.cantidad} unidad${item.cantidad!==1?'es':''}</div>`;
-  calcGan();
-}
-
-function calcGan() {
-  if (!ventaItem) return;
-  const cant = parseInt($('v-cant').value)||1;
-  const val  = parseFloat($('v-val').value)||0;
-  const cu   = ventaItem.precio||0;
-  const ct   = cu * cant;
-  const gan  = val - ct;
-  if (val>0) {
-    $('gan-box').classList.add('show');
-    $('g-cu').textContent  = fmtk(cu);
-    $('g-ct').textContent  = fmtk(ct);
-    const gEl = $('g-gan');
-    gEl.textContent  = fmtk(gan);
-    gEl.className    = gan>=0 ? 'gan-pos' : 'gan-neg';
-  } else { $('gan-box').classList.remove('show'); }
-}
-
-async function submitVenta() {
-  if (!ventaItem) { toast('Buscá y seleccioná un producto','err'); return; }
-  const val  = parseFloat($('v-val').value)||0;
-  const cant = parseInt($('v-cant').value)||1;
-  if (val<=0) { toast('Ingresá el valor de venta','err'); return; }
-  if (cant>ventaItem.cantidad) { toast(`Sin stock suficiente (hay ${ventaItem.cantidad})`, 'err'); return; }
-
-  load(true,'Guardando venta...');
-  try {
-    const r = await apiPost({
-      action:'venta', marca:ventaItem.marca, codigo:ventaItem.codigo,
-      producto:ventaItem.producto, color:ventaItem.color, talle:ventaItem.talle,
-      cantidad:cant, valorVenta:val,
-      medioPago:$('v-pago').value, tipo:$('v-tipo').value
-    });
-    if (!r.ok) throw new Error(r.error);
-    toast('Venta registrada · Ganancia: '+fmtk(r.ganancia),'ok');
-    go('home');
-  } catch(e) {
-    toast('Error: '+e.message,'err');
-  } finally { load(false); }
-}
-
-// ── GASTO ─────────────────────────────────────────
-function resetGasto() {
-  gastoTipo='COSTO'; setGTipo('COSTO');
-  $('g-desc').value=''; $('g-monto').value=''; $('g-notas').value='';
-}
-
-function setGTipo(t) {
-  gastoTipo = t;
-  $('tg-c').classList.toggle('on', t==='COSTO');
-  $('tg-i').classList.toggle('on', t==='INVERSION');
-  const cats = t==='COSTO' ? GCAT_COSTO : GCAT_INV;
-  $('g-cat').innerHTML = '<option value="">— seleccionar —</option>' +
-    cats.map(c=>`<option value="${c}">${c}</option>`).join('');
-}
-
-async function submitGasto() {
-  const desc  = $('g-desc').value.trim();
-  const monto = parseFloat($('g-monto').value)||0;
-  if (!desc||monto<=0) { toast('Completá descripción y monto','err'); return; }
-
-  load(true,'Guardando gasto...');
-  try {
-    const r = await apiPost({
-      action:'gasto', tipo:gastoTipo,
-      categoria:$('g-cat').value, descripcion:desc,
-      monto, medioPago:$('g-pago').value, notas:$('g-notas').value.trim()
-    });
-    if (!r.ok) throw new Error(r.error);
-    toast('Gasto registrado','ok');
-    go('home');
-  } catch(e) {
-    toast('Error: '+e.message,'err');
-  } finally { load(false); }
-}
-
-// ── Helpers ───────────────────────────────────────
-function up(el) { el.value = el.value.toUpperCase(); }
-
-document.addEventListener('click', e => {
-  ['c-ac','v-ac'].forEach(id => {
-    const el = $(id);
-    if (el && !el.contains(e.target) && e.target.id!=='c-search' && e.target.id!=='v-search')
-      el.style.display='none';
+  uv.forEach(v => {
+    const tr = document.createElement('tr');
+    tr.innerHTML = `<td>${v.fecha}</td><td>${v.producto}</td><td class="num">${v.cantidad}</td><td class="num">${pesos(v.monto)}</td>`;
+    tbody.appendChild(tr);
   });
+}
+
+function setText(id, val) {
+  const el = document.getElementById(id);
+  if (el) el.textContent = val;
+}
+
+// ── Stock ──────────────────────────────────────────────────────────────
+function renderStockPanel(rows) {
+  stockRows = rows || [];
+  filtrarStock();
+}
+
+function filtrarStock() {
+  const q = (document.getElementById('filtroStock')?.value || '').toLowerCase();
+  const filtered = stockRows.filter(r =>
+    !q || [r.producto,r.marca,r.codigo,r.categoria].some(f => (f||'').toLowerCase().includes(q))
+  );
+
+  const tbody = document.getElementById('tbl-stock-body');
+  tbody.innerHTML = '';
+  filtered.forEach(r => {
+    let badge;
+    if (r.cantidad <= 0)      badge = `<span class="badge badge-none">Sin stock</span>`;
+    else if (r.cantidad <= 3) badge = `<span class="badge badge-low">${r.cantidad}</span>`;
+    else                       badge = `<span class="badge badge-ok">${r.cantidad}</span>`;
+    const tr = document.createElement('tr');
+    tr.innerHTML = `
+      <td><code style="font-size:.76rem">${r.codigo||'—'}</code></td>
+      <td>${r.marca||'—'}</td><td>${r.producto||'—'}</td>
+      <td>${r.color||'—'}</td><td>${r.talle||'—'}</td>
+      <td class="num">${badge}</td><td>${r.categoria||'—'}</td>`;
+    tbody.appendChild(tr);
+  });
+  if (!filtered.length) {
+    tbody.innerHTML = '<tr><td colspan="7" style="text-align:center;color:var(--gray);padding:16px">Sin resultados</td></tr>';
+  }
+  const cnt = document.getElementById('stock-count');
+  if (cnt) cnt.textContent = `${filtered.length} items`;
+}
+
+// ── Inversion panel ────────────────────────────────────────────────────
+function renderInversionPanel(inv) {
+  if (!inv) return;
+  const container = document.getElementById('inv-socias-cards');
+  if (!container) return;
+  container.innerHTML = '';
+  const total = inv.socias.reduce((s,x) => s+x.monto, 0);
+  inv.socias.forEach(s => {
+    const pct = total > 0 ? ((s.monto/total)*100).toFixed(1) : 0;
+    const div = document.createElement('div');
+    div.style.cssText = `background:${s.color}22;border:1px solid ${s.color};border-radius:10px;padding:12px 18px;min-width:150px`;
+    div.innerHTML = `
+      <div style="font-size:.66rem;font-weight:700;color:${s.color};text-transform:uppercase;letter-spacing:.06em">${s.nombre}</div>
+      <div style="font-size:1.3rem;font-weight:800;color:var(--brown2);margin-top:4px">${pesos(s.monto)}</div>
+      <div style="font-size:.72rem;color:var(--gray);margin-top:2px">${pct}% del total</div>`;
+    container.appendChild(div);
+  });
+  mkDoughnut('chartInversionDetalle',
+    inv.socias.map(s => s.nombre),
+    inv.socias.map(s => s.monto),
+    inv.socias.map(s => s.color)
+  );
+}
+
+// ── Charts ─────────────────────────────────────────────────────────────
+function mkBar(id, labels, values, color) {
+  if (charts[id]) charts[id].destroy();
+  const ctx = document.getElementById(id);
+  if (!ctx) return;
+  charts[id] = new Chart(ctx, {
+    type: 'bar',
+    data: {
+      labels,
+      datasets: [{ data: values, backgroundColor: color+'CC', borderColor: color, borderWidth: 1.5, borderRadius: 6 }]
+    },
+    options: {
+      responsive: true,
+      plugins: {
+        legend: { display: false },
+        tooltip: { callbacks: { label: c => ' $'+c.parsed.y.toLocaleString('es-AR') } }
+      },
+      scales: {
+        y: {
+          beginAtZero: true,
+          ticks: { callback: v => '$'+(v>=1000?(v/1000).toFixed(0)+'k':v), font:{size:10} },
+          grid: { color: '#EDE5D8' }
+        },
+        x: { ticks: { font:{size:10} }, grid: { display:false } }
+      }
+    }
+  });
+}
+
+function mkDoughnut(id, labels, values, colors) {
+  if (charts[id]) charts[id].destroy();
+  const ctx = document.getElementById(id);
+  if (!ctx) return;
+  charts[id] = new Chart(ctx, {
+    type: 'doughnut',
+    data: {
+      labels,
+      datasets: [{ data: values, backgroundColor: colors, borderColor:'#FFFFFF', borderWidth:2, hoverOffset:8 }]
+    },
+    options: {
+      responsive: true,
+      cutout: '60%',
+      plugins: {
+        legend: { position:'bottom', labels:{ font:{size:10}, padding:10, usePointStyle:true, pointStyleWidth:8 } },
+        tooltip: {
+          callbacks: {
+            label: c => {
+              const total = c.dataset.data.reduce((a,b)=>a+b,0);
+              const pct   = total>0 ? ((c.parsed/total)*100).toFixed(1) : 0;
+              return ` ${c.label}: ${pcos(c.parsed)} (${pct}%)`;
+            }
+          }
+        }
+      }
+    }
+  });
+}
+function pcos(n) { return '$'+Number(n).toLocaleString('es-AR',{minimumFractionDigits:0}); }
+
+// ── Forms ──────────────────────────────────────────────────────────────
+async function submitCompra(e) {
+  e.preventDefault();
+  const f   = e.target;
+  const btn = f.querySelector('button[type=submit]');
+  const st  = document.getElementById('compra-status');
+  btn.disabled = true; st.textContent = 'Guardando...';
+
+  const codigo = generarCodigo(f.marca.value,f.categoria.value,f.color.value,f.talle.value,f.producto.value);
+
+  const res = await apiPost({
+    action:'compra', fecha:f.fecha.value, marca:f.marca.value,
+    categoria:f.categoria.value, producto:f.producto.value,
+    color:f.color.value, talle:f.talle.value,
+    cantidad:f.cantidad.value, precioCosto:f.precioCosto.value, codigo
+  });
+
+  btn.disabled = false;
+  if (res.ok) {
+    st.textContent = '';
+    toast('Compra registrada', 'ok');
+    f.reset(); setDates();
+    document.getElementById('c-codigo').textContent = 'Completa los campos para generar';
+    gData = null;
+  } else {
+    st.textContent = res.error;
+    toast('Error: '+res.error, 'err');
+  }
+}
+
+// Autocomplete venta
+let ventaTimer;
+async function buscarVenta(q) {
+  clearTimeout(ventaTimer);
+  const ul = document.getElementById('v-ac');
+  if (!q || q.length < 2) { ul.style.display = 'none'; return; }
+  ventaTimer = setTimeout(async () => {
+    const res = await apiGet({ action:'stock_venta', q });
+    ul.innerHTML = '';
+    if (!res.ok || !res.items?.length) { ul.style.display='none'; return; }
+    res.items.forEach(item => {
+      const li = document.createElement('li');
+      li.innerHTML = `<strong>${item.producto}</strong> <span style="color:var(--gray);font-size:.78rem">· ${item.marca} · ${item.color} · ${item.talle} · Stock: ${item.cantidad} · Costo: ${pesos(item.costo)}</span>`;
+      li.onclick = () => {
+        document.getElementById('v-producto').value = item.producto;
+        document.getElementById('v-marca').value    = item.marca;
+        document.getElementById('v-color').value    = item.color;
+        document.getElementById('v-talle').value    = item.talle;
+        document.getElementById('v-costo').value    = item.costo;
+        ul.style.display = 'none';
+      };
+      ul.appendChild(li);
+    });
+    ul.style.display = '';
+  }, 320);
+}
+
+// Cerrar autocomplete al hacer click fuera
+document.addEventListener('click', e => {
+  if (!e.target.closest('#v-producto') && !e.target.closest('#v-ac')) {
+    const ul = document.getElementById('v-ac');
+    if (ul) ul.style.display = 'none';
+  }
 });
 
-// ── Init ──────────────────────────────────────────
-setGTipo('COSTO');
-loadDashboard();
+async function submitVenta(e) {
+  e.preventDefault();
+  const f   = e.target;
+  const btn = f.querySelector('button[type=submit]');
+  const st  = document.getElementById('venta-status');
+  btn.disabled = true; st.textContent = 'Guardando...';
+
+  const res = await apiPost({
+    action:'venta', fecha:f.fecha.value, producto:f.producto.value,
+    marca:f.marca.value, color:f.color.value, talle:f.talle.value,
+    cantidad:f.cantidad.value, precioVenta:f.precioVenta.value, costo:f.costo.value
+  });
+
+  btn.disabled = false;
+  if (res.ok) {
+    st.textContent = '';
+    toast('Venta registrada','ok');
+    f.reset(); setDates(); gData=null;
+  } else {
+    st.textContent = res.error;
+    toast('Error: '+res.error,'err');
+  }
+}
+
+async function submitGasto(e) {
+  e.preventDefault();
+  const f   = e.target;
+  const btn = f.querySelector('button[type=submit]');
+  btn.disabled = true;
+
+  const res = await apiPost({
+    action:'gasto',
+    fecha: document.getElementById('g-fecha').value,
+    tipo:  f.tipo.value,
+    desc:  f.desc.value,
+    monto: f.monto.value
+  });
+
+  btn.disabled = false;
+  if (res.ok) { toast('Gasto registrado','ok'); f.reset(); setDates(); gData=null; }
+  else toast('Error: '+res.error,'err');
+}
+
+async function submitInversion(e) {
+  e.preventDefault();
+  const f   = e.target;
+  const btn = f.querySelector('button[type=submit]');
+  btn.disabled = true;
+
+  const res = await apiPost({
+    action:'gasto',
+    fecha: document.getElementById('gi-fecha').value,
+    tipo:  f.tipo.value,
+    desc:  f.desc.value,
+    monto: f.monto.value
+  });
+
+  btn.disabled = false;
+  if (res.ok) { toast('Inversion registrada','ok'); f.reset(); setDates(); gData=null; }
+  else toast('Error: '+res.error,'err');
+}
+
+// ── Init ───────────────────────────────────────────────────────────────
+async function init() {
+  setDates();
+  try {
+    const data = await apiGet({ action:'getAll' });
+    gData = data;
+    if (!data.ok) {
+      toast('Error: ' + (data.error||'respuesta invalida'), 'err');
+      console.error(data);
+    } else {
+      renderDashboard(data);
+      renderStockPanel(data.stockTabla);
+    }
+  } catch(err) {
+    toast('No se pudo conectar con la API', 'err');
+    console.error(err);
+  } finally {
+    document.getElementById('loader').style.display = 'none';
+  }
+}
+
+init();
 </script>
 </body>
 </html>
