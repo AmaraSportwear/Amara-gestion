@@ -441,6 +441,12 @@ td.num{text-align:right;font-variant-numeric:tabular-nums}
             <label>Monto</label>
             <input type="number" name="monto" id="g-monto" min="0" step="1" required>
           </div>
+          <div class="fg">
+            <label>Pagó</label>
+            <select id="g-pagador" name="pagadoPor">
+              <option value="">— Quién pagó —</option>
+            </select>
+          </div>
         </div>
         <div style="margin-top:14px"><button type="submit" class="btn btn-p">Registrar gasto</button></div>
       </form>
@@ -906,10 +912,11 @@ async function submitGasto(e) {
   btn.disabled = true;
   const res = await apiPost({
     action:'gasto',
-    fecha: $('g-fecha').value,
-    tipo:  $('g-tipo').value,
-    desc:  $('g-desc').value,
-    monto: $('g-monto').value
+    fecha:      $('g-fecha').value,
+    tipo:       $('g-tipo').value,
+    desc:       $('g-desc').value,
+    monto:      $('g-monto').value,
+    pagadoPor:  $('g-pagador').value
   });
   btn.disabled = false;
   if (res.ok) { toast('Gasto registrado','ok'); e.target.reset(); setDates(); gData=null; }
@@ -917,6 +924,19 @@ async function submitGasto(e) {
 }
 
 // ── Inversión panel ────────────────────────────────────────────────────
+function poblarDropdownSocias() {
+  // Poblar "Pagó" en gasto y socias en inversión desde los datos reales
+  if (!gData || !gData.inversion) return;
+  const socias = gData.inversion.socias || [];
+  ['g-pagador'].forEach(id => {
+    const sel = $(id); if (!sel) return;
+    const current = sel.value;
+    sel.innerHTML = '<option value="">— Quién pagó —</option>';
+    socias.forEach(s => sel.add(new Option(s.nombre, s.nombre)));
+    if (current) sel.value = current;
+  });
+}
+
 function renderInversionPanel(inv) {
   if (!inv) return;
   // Cards por socia
@@ -1089,8 +1109,8 @@ async function init() {
     } else {
       renderDashboard(data);
       renderStockPanel(data.stockTabla);
-      // Pre-poblar todos los dropdowns de compra existente
       if (data.catalogoStock) poblarCascading();
+      poblarDropdownSocias();
     }
   } catch(err) {
     toast('No se pudo conectar con la API', 'err');
